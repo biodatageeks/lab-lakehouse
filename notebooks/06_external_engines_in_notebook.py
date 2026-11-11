@@ -6,6 +6,10 @@
 # MAGIC and not from inside a notebook either (the files use Databricks-managed encryption).
 # MAGIC So Spark reads the governed table, hands it over as **Arrow**, and DuckDB / Polars query it.
 # MAGIC No "External data access" toggle is needed for this.
+# MAGIC
+# MAGIC Delta Sharing (the laptop path, `external/delta_sharing_read.py`) does not work from here:
+# MAGIC serverless can list shared tables but cannot download their files — the sharing storage
+# MAGIC host resolves to a private address that refuses connections (`probe_sharing_egress`).
 
 # COMMAND ----------
 

@@ -8,8 +8,9 @@
   2. share `lab_shop_share` with the course tables (history on, so recipients can time travel)
   3. recipient `lab_shop_laptop` (TOKEN auth) granted SELECT on the share
   4. downloads the one-time activation credential (`.share` profile) to --profile
-  5. stores the same profile in secret scope `lab` (key `shop_share`) so notebooks can read
-     it with dbutils.secrets.get, without pasting a token anywhere (--no-secret to skip)
+  5. only with --secret: stores the same profile as secret `lab/shop_share`. Note that Free
+     Edition serverless cannot download shared files (the sharing storage host is private and
+     refuses connections), so notebooks read tables with Spark instead; this is for probes.
 
 The profile is a bearer credential to the shared tables: keep it out of git.
 `teardown` removes the share and recipient. It leaves the metastore scope as it is unless
@@ -141,13 +142,13 @@ def main(argv=None) -> int:
     ap.add_argument("--profile", type=Path, default=Path.home() / ".lab" / "shop.share")
     ap.add_argument("--token-days", type=int, default=120)
     ap.add_argument("--restore-scope", action="store_true", help="teardown: set sharing scope back to INTERNAL")
-    ap.add_argument("--no-secret", action="store_true", help="setup: don't store the credential in a secret scope")
+    ap.add_argument("--secret", action="store_true", help="setup: also store the credential as secret lab/shop_share")
     a = ap.parse_args(argv)
     if a.action == "setup":
         enable_external_sharing(a.token_days)
         res = ensure_share(TABLES)
         content = ensure_recipient(a.profile.expanduser())
-        if not a.no_secret:
+        if a.secret:
             store_secret(content)
         return 0 if all(not v.startswith("ERR") for v in res.values()) else 1
     teardown(a.restore_scope)

@@ -154,7 +154,7 @@ def share_profile(tmp_path_factory, record):
     record("s6.delta_sharing_preconditions", {"external_access_enabled": before.external_access_enabled,
                                               "scope_before": before.delta_sharing_scope.value})
     profile = tmp_path_factory.mktemp("share") / "shop.share"
-    assert dsp.main(["setup", "--profile", str(profile), "--token-days", "1"]) in (0, 1)
+    assert dsp.main(["setup", "--profile", str(profile), "--token-days", "1", "--secret"]) in (0, 1)
     yield profile
     dsp.teardown(restore_scope=False)
     if before.delta_sharing_scope == uc.DeltaSharingScopeEnum.INTERNAL:
@@ -197,3 +197,13 @@ def test_delta_sharing_managed_iceberg_not_shareable(share_profile, record):
         delta_sharing_read.read(TT, share_profile)
     record("s6.delta_sharing_managed_iceberg", str(ei.value).splitlines()[0][:200])
     assert "DS_UNSUPPORTED_DELTA_TABLE_FEATURES" in str(ei.value)
+
+
+@pytest.mark.open_catalog
+def test_delta_sharing_from_inside_notebook(share_profile, record):
+    """Research probe: serverless lists shared tables but cannot download files (private host)."""
+    out = run_notebook("notebooks/probe_sharing_egress.py", {})
+    record("s6.delta_sharing_in_notebook", out)
+    if str(out.get("parquet_path_rows", "")).startswith("ERR"):
+        pytest.xfail("Delta Sharing file downloads are blocked from Free Edition serverless")
+    assert out["parquet_path_rows"] == KEY["silver_orders_rows"]

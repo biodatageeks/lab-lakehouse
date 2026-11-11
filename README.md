@@ -80,6 +80,9 @@ LAB_NO_RESET=1 uv run pytest tests/test_s6_external.py          # one session, k
 
   Session 6 therefore uses Delta Sharing (laptop) or Spark → Arrow (notebook) to feed
   DuckDB/Polars, and SQL `DESCRIBE HISTORY` / `VERSION AS OF` for Iceberg time travel.
+* Delta Sharing works from a laptop but **not from inside a notebook**: serverless lists the
+  shared tables but cannot download their files (`us-east-2.storage.cloud.databricks.com`
+  resolves to a private address that refuses connections). Notebooks use Spark → Arrow.
 * `processingTime` triggers are refused on serverless (`INFINITE_STREAMING_TRIGGER_NOT_SUPPORTED`).
 * An Auto Loader run that meets a new column fails once (`UNKNOWN_FIELD_EXCEPTION`); re-run it.
   In Jobs, set `max_retries >= 1`.
