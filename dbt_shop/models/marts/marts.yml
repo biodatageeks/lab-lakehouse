@@ -1,0 +1,14 @@
+version: 2
+models:
+  - name: fct_orders
+    description: One row per order, enriched with product category
+    columns:
+      - name: order_id
+        data_tests: [unique, not_null]
+      - name: customer_id
+        data_tests: [not_null]
+  - name: dim_customers
+    description: One row per customer (Delta + UniForm, readable as Iceberg; shared to laptops in Session 6)
+    columns:
+      - name: customer_id
+        data_tests: [unique, not_null]
