@@ -1,0 +1,9 @@
+version: 2
+sources:
+  - name: silver
+    schema: silver
+    tables:
+      - name: orders
+        description: Deduplicated orders produced by the Session 3 pipeline
+      - name: dim_products
+        description: Products dimension (Session 1 CTAS)

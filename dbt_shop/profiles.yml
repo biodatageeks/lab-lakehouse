@@ -1,0 +1,13 @@
+# Credentials come from the environment (see lab/dbt.py, or export them yourself):
+#   DBT_DATABRICKS_HOST, DBT_DATABRICKS_HTTP_PATH, DBT_DATABRICKS_TOKEN
+dbt_shop:
+  target: dev
+  outputs:
+    dev:
+      type: databricks
+      catalog: "{{ env_var('LAB_CATALOG', 'shop') }}"
+      schema: gold
+      host: "{{ env_var('DBT_DATABRICKS_HOST') }}"
+      http_path: "{{ env_var('DBT_DATABRICKS_HTTP_PATH') }}"
+      token: "{{ env_var('DBT_DATABRICKS_TOKEN') }}"
+      threads: 4

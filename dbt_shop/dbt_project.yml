@@ -1,0 +1,22 @@
+name: dbt_shop
+version: "1.0.0"
+profile: dbt_shop
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+
+flags:
+  # table_format='iceberg' -> Delta table with UniForm (Iceberg metadata on top).
+  # Setting use_managed_iceberg: true would create a *managed Iceberg* table instead, but
+  # those carry the typeWidening feature and cannot be shared over Delta Sharing, which is
+  # how laptop engines read course tables on Free Edition.
+  use_managed_iceberg: false
+
+models:
+  dbt_shop:
+    staging:
+      +schema: silver
+      +materialized: view
+    marts:
+      +schema: gold
+      +materialized: table
