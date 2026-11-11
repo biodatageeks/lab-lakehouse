@@ -8,8 +8,10 @@
   2. share `lab_shop_share` with the course tables (history on, so recipients can time travel)
   3. recipient `lab_shop_laptop` (TOKEN auth) granted SELECT on the share
   4. downloads the one-time activation credential (`.share` profile) to --profile
+  5. stores the same profile in secret scope `lab` (key `shop_share`) so notebooks can read
+     it with dbutils.secrets.get, without pasting a token anywhere (--no-secret to skip)
 
-The profile file is a bearer credential to the shared tables: keep it out of git.
+The profile is a bearer credential to the shared tables: keep it out of git.
 `teardown` removes the share and recipient. It leaves the metastore scope as it is unless
 --restore-scope is given.
 """
@@ -27,6 +29,8 @@ from databricks.sdk.service import sharing as ds
 
 from lab.common import CATALOG, ws
 
+SECRET_SCOPE = "lab"
+SECRET_KEY = "shop_share"
 SHARE = "lab_shop_share"
 RECIPIENT = "lab_shop_laptop"
 TABLES = ["gold.fct_orders", "gold.orders_uniform", "silver.orders", "gold.revenue_hourly", "gold.dim_customers"]
@@ -80,7 +84,7 @@ def ensure_share(tables: list[str]) -> dict:
     return results
 
 
-def ensure_recipient(profile: Path) -> None:
+def ensure_recipient(profile: Path) -> str:
     w = ws()
     try:
         w.recipients.delete(RECIPIENT)  # activation links are one-time: recreate for a fresh one
@@ -91,19 +95,34 @@ def ensure_recipient(profile: Path) -> None:
     activation = r.tokens[0].activation_url
     token = activation.rstrip("/").rsplit("?", 1)[-1].split("=")[-1] if "?" in activation else activation.rstrip("/").rsplit("/", 1)[-1]
     cred = w.recipient_activation.retrieve_token(token)
-    profile.parent.mkdir(parents=True, exist_ok=True)
-    profile.write_text(json.dumps({
+    content = json.dumps({
         "shareCredentialsVersion": cred.share_credentials_version or 1,
         "bearerToken": cred.bearer_token,
         "endpoint": cred.endpoint,
         "expirationTime": cred.expiration_time,
-    }))
+    })
+    profile.parent.mkdir(parents=True, exist_ok=True)
+    profile.write_text(content)
     profile.chmod(0o600)
     print(f"[ok] recipient {RECIPIENT}; credential written to {profile}")
+    return content
+
+
+def store_secret(content: str) -> None:
+    w = ws()
+    if SECRET_SCOPE not in {s.name for s in w.secrets.list_scopes()}:
+        w.secrets.create_scope(SECRET_SCOPE)
+    w.secrets.put_secret(SECRET_SCOPE, SECRET_KEY, string_value=content)
+    print(f"[ok] credential stored as secret {SECRET_SCOPE}/{SECRET_KEY} (for notebooks)")
 
 
 def teardown(restore_scope: bool) -> None:
     w = ws()
+    try:
+        w.secrets.delete_secret(SECRET_SCOPE, SECRET_KEY)
+        print(f"[ok] deleted secret {SECRET_SCOPE}/{SECRET_KEY}")
+    except Exception:  # noqa: BLE001 - scope or key absent
+        pass
     for fn, name in ((w.recipients.delete, RECIPIENT), (w.shares.delete, SHARE)):
         try:
             fn(name)
@@ -122,11 +141,14 @@ def main(argv=None) -> int:
     ap.add_argument("--profile", type=Path, default=Path.home() / ".lab" / "shop.share")
     ap.add_argument("--token-days", type=int, default=120)
     ap.add_argument("--restore-scope", action="store_true", help="teardown: set sharing scope back to INTERNAL")
+    ap.add_argument("--no-secret", action="store_true", help="setup: don't store the credential in a secret scope")
     a = ap.parse_args(argv)
     if a.action == "setup":
         enable_external_sharing(a.token_days)
         res = ensure_share(TABLES)
-        ensure_recipient(a.profile.expanduser())
+        content = ensure_recipient(a.profile.expanduser())
+        if not a.no_secret:
+            store_secret(content)
         return 0 if all(not v.startswith("ERR") for v in res.values()) else 1
     teardown(a.restore_scope)
     return 0
