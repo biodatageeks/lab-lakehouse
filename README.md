@@ -8,6 +8,7 @@ installs, no credit card, no cloud bucket of their own.
 
 What works and what doesn't on a trial, with evidence: [docs/snowflake-feasibility.md](docs/snowflake-feasibility.md).
 For trainers (topics, setup, session guide with expected results, grading, troubleshooting): [docs/trainer-manual.md](docs/trainer-manual.md).
+Databricks Free Edition vs Snowflake trial, feature by feature: [docs/platform-comparison.md](docs/platform-comparison.md).
 
 ## For students
 
@@ -80,5 +81,6 @@ notebooks/   *.ipynb (generated, what students open), src/*.py (sources), lab_nb
 dbt_shop/    dbt project run natively (EXECUTE DBT PROJECT); macros/iceberg_table.sql
 lab/         harness: connection, notebook build, deploy + headless runner
 tests/       test_s0 … test_s7, one file per session; test_s9_new_account (opt-in); offline test_build
-docs/        snowflake-feasibility.md — verified possible / not possible on a trial; trainer-manual.md
+docs/        snowflake-feasibility.md — verified possible / not possible on a trial; trainer-manual.md;
+             platform-comparison.md — Databricks Free Edition vs Snowflake trial
 ```

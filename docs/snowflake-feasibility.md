@@ -23,6 +23,8 @@ Snowflake-managed storage). The real constraints are **account-level**, not feat
    in a bucket the container cannot reach. DuckDB/Polars read the tables through Snowflake
    (`to_arrow()`), exactly like the Databricks version reads through Spark.
 
+Side-by-side with Databricks Free Edition: [platform-comparison.md](platform-comparison.md).
+
 ## Session by session
 
 | Session | Databricks Free Edition | Snowflake trial (notebooks only) | Status |
