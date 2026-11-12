@@ -143,12 +143,15 @@ def upload_products(session, seed: int = 42) -> None:
 
 
 def produce(session, start: int = 1, count: int = 10, interval: float = 0, seed: int = 42,
-            schema_change_at: int = 30, malformed_at: int | None = None) -> list[int]:
-    """Upload files ``start .. start+count-1``; ``interval`` seconds apart (class mode: 60)."""
+            schema_change_at: int = 30, malformed_at: int | None = None, tag: str = "") -> list[int]:
+    """Upload files ``start .. start+count-1``; ``interval`` seconds apart (class mode: 60).
+    ``tag`` is appended to the file names (live demo: new names, so COPY's load history,
+    which remembers file names, loads them again on every demo)."""
     done = []
+    sfx = f"_{tag}" if tag else ""
     for i in range(start, start + count):
-        put(session, f"orders/orders_{i:05d}.json", _ndjson(orders_file(i, seed, schema_change_at, malformed_at)))
-        put(session, f"clicks/clicks_{i:05d}.json", _ndjson(clicks_file(i, seed)))
+        put(session, f"orders/orders_{i:05d}{sfx}.json", _ndjson(orders_file(i, seed, schema_change_at, malformed_at)))
+        put(session, f"clicks/clicks_{i:05d}{sfx}.json", _ndjson(clicks_file(i, seed)))
         done.append(i)
         print(f"{datetime.now():%H:%M:%S} file {i} uploaded")
         if interval and i < start + count - 1:

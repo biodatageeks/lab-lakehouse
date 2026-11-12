@@ -53,6 +53,11 @@ in Snowsight, no laptop:
 the first lab run uses the defaults (files 1–10); the second uses
 `--start 11 --count 25 --malformed-at 15 --with-task 1`. Class mode: `--interval 60`.
 
+`03_pipeline --live-minutes 5` (or `args(live_minutes=5)`) is **live mode**: one new file a minute
+flows producer → stage → triggered task → bronze → silver → gold with no manual refresh
+(gold `TARGET_LAG = '1 minute'`); about 1–1¾ min from file to gold. It cleans up afterwards, so
+grading still expects 35 files.
+
 ## For course staff: the headless test-suite
 
 The harness deploys the notebooks as a **notebook project** and runs each one in a fresh

@@ -20,6 +20,7 @@ eu-north-1 (branch `snowflake-notebooks`). Neither asks for a credit card.
 | | Schema evolution | ⚠️ fails once on the new column, re-run | ✅ in the same load |
 | | Bad records | ✅ `_rescued_data` | ✅ `ON_ERROR = CONTINUE` + `COPY_HISTORY` |
 | | Continuous / on-arrival loading | ❌ `processingTime` refused on serverless | ✅ Snowpipe + stream-triggered task |
+| | Live pipeline (files flow to gold without manual runs) | — (triggered pipelines; continuous not tested) | ✅ live mode: dynamic tables, 1-minute lag, ~1–1¾ min file → gold |
 | **S3 Pipeline** | Declarative pipeline | ✅ Lakeflow | ✅ dynamic tables |
 | | Expectations: drop bad rows | ✅ | ✅ DMF expectations + filter |
 | | Expectations: fail the update | ✅ `FAIL UPDATE` | ⚠️ fail-fast query workaround |

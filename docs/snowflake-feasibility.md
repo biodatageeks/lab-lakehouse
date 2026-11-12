@@ -34,6 +34,7 @@ Side-by-side with Databricks Free Edition: [platform-comparison.md](platform-com
 | 1 Upload | Files API from laptop | `session.file.put_stream` from the notebook | ✅ |
 | 2 Ingestion | Auto Loader `availableNow`; fails once on new column | `COPY INTO` load history (re-run = 0 files), `ENABLE_SCHEMA_EVOLUTION` adds `COUPON_CODE` in the same run, `ON_ERROR = CONTINUE` + `COPY_HISTORY` for the malformed row | ✅ simpler |
 | 2 Streaming | `processingTime` refused on serverless | **Snowpipe** on the internal stage (`ALTER PIPE … REFRESH`), **stream on stage + triggered serverless task** loads files as they land | ✅ |
+| 3 Live pipeline | — | `03_pipeline --live-minutes N`: gold `TARGET_LAG = '1 minute'`, silver `DOWNSTREAM`; new files reach gold with scheduled refreshes only, **53–104 s** from landing to gold (4 files, measured); cleans up after | ✅ |
 | 3 Pipeline | Lakeflow declarative pipeline + expectations + event log | **dynamic tables** (`TARGET_LAG = DOWNSTREAM`), **DMF expectations** (`SYSTEM$EVALUATE_DATA_QUALITY_EXPECTATIONS`), `DYNAMIC_TABLE_REFRESH_HISTORY` | ✅ |
 | 3 `FAIL UPDATE` | expectation action | no native equivalent; workaround: a query that errors on bad rows makes the refresh fail and keeps the last good data | ⚠️ workaround |
 | 4 Time travel | `DESCRIBE HISTORY`, `VERSION AS OF`, `RESTORE`, `OPTIMIZE`, `VACUUM` | `QUERY_HISTORY`, `BEFORE(STATEMENT)`, `AT(TIMESTAMP/OFFSET)`, clone + `SWAP`, `UNDROP`, retention 0–90 days, clustering keys; no `VACUUM`/`OPTIMIZE` (automatic) | ✅ |

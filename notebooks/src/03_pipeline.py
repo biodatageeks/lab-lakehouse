@@ -4,13 +4,16 @@
 #   it can). `TARGET_LAG = 'DOWNSTREAM'` = refresh only when something downstream needs it.
 # * **Data metric functions** (DMFs) with **expectations** measure quality on bronze.
 # * The refresh history plays the role of a pipeline event log.
+# * **Live mode** (`--live-minutes 5`, or `args(live_minutes=5)`): watch the pipeline process
+#   new files as they land: producer → stage → triggered task → bronze → silver → gold.
 
 # %%
-import os, sys, time
+import os, sys, time, uuid
 sys.path.insert(0, os.getcwd())
 from lab_nb import *
+import producer
 
-a = args()
+a = args(live_minutes=0, interval=60, files=35, malformed_at=15)
 rep = Report("03_pipeline", a.run_id)
 started = scalar("SELECT CURRENT_TIMESTAMP()::string")
 
@@ -78,4 +81,72 @@ sql("""CREATE OR REPLACE DYNAMIC TABLE SHOP.SILVER.ORDERS_STRICT
        AS SELECT order_id, IFF(amount > 0, amount, 1 / 0) AS amount FROM SHOP.BRONZE.ORDERS_RAW""")
 rep["strict_refresh"] = attempt(lambda: sql("ALTER DYNAMIC TABLE SHOP.SILVER.ORDERS_STRICT REFRESH") and "refreshed")
 sql("DROP DYNAMIC TABLE SHOP.SILVER.ORDERS_STRICT")
+
+# %% [markdown]
+# ## Live mode: watch data flow through the pipeline
+# Gold gets `TARGET_LAG = '1 minute'` (the minimum); silver is `DOWNSTREAM`, so Snowflake
+# refreshes both on its own. Session 2's task loads each file as it lands. Nobody calls REFRESH.
+# Expect about 1–2 minutes from a file landing to gold. A 1-minute lag keeps the warehouse busy
+# (~1 credit/hour on X-Small), so the last cell puts everything back.
+
+# %%
+def snapshot(t0: float, tag: str) -> dict:
+    r = rows(f"""SELECT
+        (SELECT count(*) FROM SHOP.BRONZE.ORDERS_RAW WHERE source_file LIKE '%{tag}.json') AS live_bronze_rows,
+        (SELECT count(*) FROM SHOP.BRONZE.ORDERS_RAW) AS bronze_rows,
+        (SELECT count(*) FROM SHOP.SILVER.ORDERS) AS silver_rows,
+        (SELECT round(sum(revenue), 2) FROM SHOP.GOLD.REVENUE_HOURLY) AS gold_revenue""")[0]
+    last = rows("""SELECT name, refresh_trigger, refresh_action, refresh_end_time::string AS at
+        FROM TABLE(SHOP.INFORMATION_SCHEMA.DYNAMIC_TABLE_REFRESH_HISTORY(NAME_PREFIX => 'SHOP.'))
+        WHERE state = 'SUCCEEDED' ORDER BY refresh_end_time DESC LIMIT 1""")
+    snap = {"t_s": round(time.time() - t0), **{k.lower(): (float(v) if k == "GOLD_REVENUE" else v) for k, v in r.items()},
+            "last_refresh": "{NAME} {REFRESH_TRIGGER} {REFRESH_ACTION}".format(**last[0]) if last else None}
+    print(snap)
+    return snap
+
+if a.live_minutes:
+    tag = "live" + uuid.uuid4().hex[:6]
+    first = a.files + 1
+    n = max(1, int(a.live_minutes * 60 // a.interval))
+    expect = producer.answer_key(a.files + n, malformed_at=a.malformed_at or None)
+    live = {"tag": tag, "files": [first, first + n - 1], "expected_silver_rows": expect["silver_orders_rows"],
+            "expected_gold_revenue": expect["silver_revenue_total"], "timeline": []}
+    sql("ALTER DYNAMIC TABLE SHOP.GOLD.REVENUE_HOURLY SET TARGET_LAG = '1 minute'")
+    sql("ALTER TASK SHOP.BRONZE.LOAD_ORDERS_ON_ARRIVAL RESUME")
+    live_start = scalar("SELECT CURRENT_TIMESTAMP()::string")
+    t0 = time.time()
+    try:
+        for i in range(first, first + n):
+            producer.produce(session, i, 1, tag=tag, malformed_at=a.malformed_at or None)
+            sql("ALTER STAGE SHOP.BRONZE.LANDING REFRESH")   # internal stage: register the file
+            tick = time.time()
+            while time.time() - tick < a.interval:
+                live["timeline"].append(snapshot(t0, tag))
+                time.sleep(15)
+        live["last_file_at_s"] = round(time.time() - t0)
+        while time.time() - t0 < live["last_file_at_s"] + 240:   # let the last file reach gold
+            s = snapshot(t0, tag)
+            live["timeline"].append(s)
+            if s["silver_rows"] == expect["silver_orders_rows"] and s["gold_revenue"] == expect["silver_revenue_total"]:
+                break
+            time.sleep(15)
+        live["settled_after_last_file_s"] = round(time.time() - t0) - live["last_file_at_s"]
+        live["scheduled_refreshes"] = rows(f"""SELECT name, refresh_action, statistics:numInsertedRows::int AS inserted,
+                refresh_end_time::string AS at
+            FROM TABLE(SHOP.INFORMATION_SCHEMA.DYNAMIC_TABLE_REFRESH_HISTORY(NAME_PREFIX => 'SHOP.'))
+            WHERE refresh_trigger = 'SCHEDULED' AND state = 'SUCCEEDED'
+              AND refresh_start_time >= '{live_start}'::timestamp_ltz ORDER BY refresh_end_time""")
+        live["manual_refreshes"] = scalar(f"""SELECT count(*)
+            FROM TABLE(SHOP.INFORMATION_SCHEMA.DYNAMIC_TABLE_REFRESH_HISTORY(NAME_PREFIX => 'SHOP.'))
+            WHERE refresh_trigger = 'MANUAL' AND refresh_start_time >= '{live_start}'::timestamp_ltz""")
+    finally:
+        # put the course back to its 35-file state (grading and later sessions rely on it)
+        sql("ALTER TASK SHOP.BRONZE.LOAD_ORDERS_ON_ARRIVAL SUSPEND")
+        sql("ALTER DYNAMIC TABLE SHOP.GOLD.REVENUE_HOURLY SET TARGET_LAG = '1 day'")
+        live["deleted_live_rows"] = sql(f"DELETE FROM SHOP.BRONZE.ORDERS_RAW WHERE source_file LIKE '%{tag}.json'")[0][0]
+        sql(f"REMOVE {LANDING} PATTERN = '.*_{tag}[.]json'")
+        sql("ALTER STAGE SHOP.BRONZE.LANDING REFRESH")
+        sql("ALTER DYNAMIC TABLE SHOP.GOLD.REVENUE_HOURLY REFRESH")
+        live["after_cleanup"] = snapshot(t0, tag)
+    rep["live"] = live
 rep.save()
