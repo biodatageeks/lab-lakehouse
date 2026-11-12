@@ -1,0 +1,8 @@
+.env
+.venv/
+__pycache__/
+.idea/
+reports/
+.pytest_cache/
+dbt_shop/target/
+dbt_shop/logs/

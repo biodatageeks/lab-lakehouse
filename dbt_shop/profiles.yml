@@ -1,0 +1,13 @@
+# dbt Projects on Snowflake run as the calling user: account/user stay empty, no secrets here.
+dbt_shop:
+  target: dev
+  outputs:
+    dev:
+      type: snowflake
+      account: ""
+      user: ""
+      role: ACCOUNTADMIN
+      database: SHOP
+      schema: GOLD
+      warehouse: LAB_WH
+      threads: 4

@@ -1,0 +1,10 @@
+version: 2
+sources:
+  - name: silver
+    database: SHOP
+    schema: SILVER
+    tables:
+      - name: ORDERS
+        description: Dynamic table from Session 3 (deduplicated, validated)
+      - name: DIM_PRODUCTS
+        description: Products table from Session 1
