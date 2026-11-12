@@ -84,7 +84,7 @@ flowchart LR
 | `01_storage` | 1 | stage upload from a notebook, `INFER_SCHEMA` table, managed **Iceberg** table + Horizon REST metadata |
 | `02_ingestion` | 2 | `COPY INTO` (load history, schema evolution, `ON_ERROR`), **Snowpipe**, stream-triggered **task** |
 | `03_pipeline` | 3 | **dynamic tables** (silver/gold), **data metric functions** with expectations, refresh history |
-| `04_time_travel` | 4 | query history, `BEFORE`/`AT`, clone + `SWAP` restore, `UNDROP`, retention, clustering |
+| `04_time_travel` | 4 | query history, the table before/after the bad update (`BEFORE`/`AT (STATEMENT)`), version syntax (`AT (VERSION =>` snapshot) on Iceberg), clone + `SWAP` restore, `UNDROP`, retention, clustering |
 | `05_dbt` | 5 | **dbt Projects on Snowflake**: incremental merge, Iceberg model, tests, docs |
 | `06_open_formats` | 6 | Snowflake SQL vs **Polars** vs **DuckDB** via Arrow; Iceberg snapshots + time travel |
 | `07_ops` | 7 | scheduled task, task-run notebook (a "job"), Git → stage, credits, grading |

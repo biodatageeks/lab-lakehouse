@@ -37,6 +37,7 @@ Side-by-side with Databricks Free Edition: [platform-comparison.md](platform-com
 | 3 Live pipeline | — | `03_pipeline --live-minutes N`: gold `TARGET_LAG = '1 minute'`, silver `DOWNSTREAM`; new files reach gold with scheduled refreshes only, **53–104 s** from landing to gold (4 files, measured); cleans up after | ✅ |
 | 3 Pipeline | Lakeflow declarative pipeline + expectations + event log | **dynamic tables** (`TARGET_LAG = DOWNSTREAM`), **DMF expectations** (`SYSTEM$EVALUATE_DATA_QUALITY_EXPECTATIONS`), `DYNAMIC_TABLE_REFRESH_HISTORY` | ✅ |
 | 3 `FAIL UPDATE` | expectation action | no native equivalent; workaround: a query that errors on bad rows makes the refresh fail and keeps the last good data | ⚠️ workaround |
+| 4 Version syntax | `VERSION AS OF n` | native tables: no version numbers (`AT (VERSION => 1)` → "Invalid data type"); **Iceberg tables: `AT (VERSION => <snapshot id>)`**, ids from the Horizon catalog; notebook 04 shows both, plus `BEFORE`/`AT (STATEMENT => $qid)` before/after the bad update | ✅ |
 | 4 Time travel | `DESCRIBE HISTORY`, `VERSION AS OF`, `RESTORE`, `OPTIMIZE`, `VACUUM` | `QUERY_HISTORY`, `BEFORE(STATEMENT)`, `AT(TIMESTAMP/OFFSET)`, clone + `SWAP`, `UNDROP`, retention 0–90 days, clustering keys; no `VACUUM`/`OPTIMIZE` (automatic) | ✅ |
 | 5 dbt | dbt-databricks from laptop | **dbt Projects on Snowflake** (`CREATE/EXECUTE DBT PROJECT`, dbt 1.9.4 + snowflake 1.9.2): views, incremental **merge**, tests, `docs generate` | ✅ |
 | 5 Iceberg model | `table_format='iceberg'` / UniForm | built-in `table_format='iceberg'` fails on Snowflake storage (`BASE_LOCATION` not supported); 15-line `iceberg_table` materialization in `dbt_shop/macros/` | ✅ with macro |
@@ -65,7 +66,7 @@ Java 17 as the read-only service user from `prep/colab_access.sql`:
 Notes: Horizon serves **Iceberg tables only**, so Session 6 publishes `GOLD.FCT_ORDERS_ICEBERG`
 (timestamps cast to microseconds). Auth is key-pair JWT → OAuth token (`session:role:LAB_READER`);
 the private key lives in Colab Secrets, and access is revoked with `ALTER USER LAB_COLAB UNSET
-RSA_PUBLIC_KEY`. The role sees only the three Iceberg tables. Data and credentials leave Snowflake
+RSA_PUBLIC_KEY`. The role sees only the Iceberg tables. Data and credentials leave Snowflake
 — fine for this synthetic data.
 
 ## Not possible / limits found

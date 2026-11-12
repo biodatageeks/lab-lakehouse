@@ -42,6 +42,114 @@ rep["zeroed_at_timestamp"] = scalar(
 rep["zeroed_at_offset_minus_1h"] = attempt(lambda: scalar(f"SELECT count_if(amount = 0) FROM {T} AT (OFFSET => -3600)"))
 
 # %% [markdown]
+# ## The same rows, before and after the bad update
+# One query id gives you both versions of the table:
+# * `BEFORE (STATEMENT => $qid)`: the table just *before* that statement ran
+# * `AT (STATEMENT => $qid)`: the table *including* that statement's change
+#
+# Joining the two versions on the key shows exactly which rows the update changed. The cell
+# below runs this plain SQL; you can also paste it into a Snowsight SQL worksheet:
+#
+# ```sql
+# SET qid = '<query id of the bad UPDATE>';   -- from the query history above
+#
+# SELECT b.order_id, b.status, b.amount AS amount_before, a.amount AS amount_after
+# FROM SHOP.GOLD.ORDERS_SNAPSHOT BEFORE (STATEMENT => $qid) b
+# JOIN SHOP.GOLD.ORDERS_SNAPSHOT AT (STATEMENT => $qid) a ON a.order_id = b.order_id
+# WHERE a.amount IS DISTINCT FROM b.amount
+# ORDER BY b.order_id;
+#
+# SELECT 'before' AS version, count(*) AS orders, count_if(amount = 0) AS zero_amount,
+#        round(sum(amount), 2) AS revenue
+# FROM SHOP.GOLD.ORDERS_SNAPSHOT BEFORE (STATEMENT => $qid)
+# UNION ALL
+# SELECT 'after', count(*), count_if(amount = 0), round(sum(amount), 2)
+# FROM SHOP.GOLD.ORDERS_SNAPSHOT AT (STATEMENT => $qid);
+# ```
+
+# %%
+sql(f"SET qid = '{qid}'")   # the bad UPDATE's query id, as a session variable
+
+DIFF_SQL = """
+SELECT b.order_id, b.status, b.amount AS amount_before, a.amount AS amount_after
+FROM SHOP.GOLD.ORDERS_SNAPSHOT BEFORE (STATEMENT => $qid) b
+JOIN SHOP.GOLD.ORDERS_SNAPSHOT AT (STATEMENT => $qid) a ON a.order_id = b.order_id
+WHERE a.amount IS DISTINCT FROM b.amount
+"""
+SUMMARY_SQL = """
+SELECT 'before' AS version, count(*) AS orders, count_if(amount = 0) AS zero_amount,
+       round(sum(amount), 2) AS revenue
+FROM SHOP.GOLD.ORDERS_SNAPSHOT BEFORE (STATEMENT => $qid)
+UNION ALL
+SELECT 'after', count(*), count_if(amount = 0), round(sum(amount), 2)
+FROM SHOP.GOLD.ORDERS_SNAPSHOT AT (STATEMENT => $qid)
+"""
+show(DIFF_SQL + "ORDER BY b.order_id LIMIT 10")
+show(SUMMARY_SQL)
+rep["versions"] = {r["VERSION"]: {"orders": r["ORDERS"], "zero_amount": r["ZERO_AMOUNT"], "revenue": float(r["REVENUE"])}
+                   for r in rows(SUMMARY_SQL)}
+rep["changed_rows"] = scalar(f"SELECT count(*) FROM ({DIFF_SQL})")
+rep["changed_sample"] = [{k.lower(): (float(v) if k.startswith("AMOUNT") else v) for k, v in r.items()}
+                         for r in rows(DIFF_SQL + "ORDER BY b.order_id LIMIT 3")]
+
+# %% [markdown]
+# ## Version syntax: native tables vs Iceberg tables
+# Coming from Databricks you may look for `VERSION AS OF n`. In Snowflake, **native tables have
+# no version numbers**: you address a past state by statement, timestamp or offset. **Iceberg
+# tables do**: every commit is an Iceberg snapshot, and `AT (VERSION => <snapshot id>)` reads it.
+#
+# | Read the table… | Databricks (Delta) | Snowflake native table | Snowflake Iceberg table |
+# | --- | --- | --- | --- |
+# | at a version | `VERSION AS OF 3` | not available | `AT (VERSION => <snapshot id>)` |
+# | at a time | `TIMESTAMP AS OF '…'` | `AT (TIMESTAMP => '…'::timestamp_ltz)` | same |
+# | some seconds ago | — | `AT (OFFSET => -60)` | same |
+# | just before / including a statement | — | `BEFORE / AT (STATEMENT => '<query id>')` | same |
+# | list the versions | `DESCRIBE HISTORY` | query history | Iceberg snapshots (Horizon catalog) |
+#
+# Below: an Iceberg copy of the good data gets the same bad update, then we read it by version.
+#
+# ```sql
+# SET v_before = <first snapshot id>;   -- snapshot ids from the Iceberg catalog
+# SET v_after  = <last snapshot id>;
+# SELECT 'before' AS version, count_if(amount = 0) AS zero_amount, round(sum(amount), 2) AS revenue
+# FROM SHOP.GOLD.ORDERS_SNAPSHOT_ICEBERG AT (VERSION => $v_before)
+# UNION ALL
+# SELECT 'after', count_if(amount = 0), round(sum(amount), 2)
+# FROM SHOP.GOLD.ORDERS_SNAPSHOT_ICEBERG AT (VERSION => $v_after);
+# ```
+
+# %%
+# An Iceberg copy of the good data (Iceberg stores timestamps in microseconds), then the same bad update
+sql("""CREATE OR REPLACE ICEBERG TABLE SHOP.GOLD.ORDERS_SNAPSHOT_ICEBERG
+       CATALOG = 'SNOWFLAKE' EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED'
+       AS SELECT * REPLACE (order_ts::TIMESTAMP_NTZ(6) AS order_ts)
+          FROM SHOP.GOLD.ORDERS_SNAPSHOT BEFORE (STATEMENT => $qid)""")
+sql("UPDATE SHOP.GOLD.ORDERS_SNAPSHOT_ICEBERG SET amount = 0 WHERE status = 'placed'")
+ice_qid = scalar("SELECT LAST_QUERY_ID()")
+
+# The versions = Iceberg snapshots, listed through the Horizon catalog (metadata works in the notebook)
+snaps = horizon_catalog().load_table("GOLD.ORDERS_SNAPSHOT_ICEBERG").snapshots()
+for s_ in snaps:
+    print(s_.snapshot_id, s_.summary.operation.value if s_.summary else None)
+sql(f"SET v_before = {snaps[0].snapshot_id}")
+sql(f"SET v_after = {snaps[-1].snapshot_id}")
+
+VERSIONS_SQL = """
+SELECT 'before' AS version, count(*) AS orders, count_if(amount = 0) AS zero_amount, round(sum(amount), 2) AS revenue
+FROM SHOP.GOLD.ORDERS_SNAPSHOT_ICEBERG AT (VERSION => $v_before)
+UNION ALL
+SELECT 'after', count(*), count_if(amount = 0), round(sum(amount), 2)
+FROM SHOP.GOLD.ORDERS_SNAPSHOT_ICEBERG AT (VERSION => $v_after)
+"""
+show(VERSIONS_SQL)
+rep["iceberg_snapshots"] = [(s_.snapshot_id, s_.summary.operation.value if s_.summary else None) for s_ in snaps]
+rep["iceberg_versions"] = {r["VERSION"]: {"orders": r["ORDERS"], "zero_amount": r["ZERO_AMOUNT"], "revenue": float(r["REVENUE"])}
+                           for r in rows(VERSIONS_SQL)}
+rep["iceberg_before_statement_zero"] = attempt(lambda: scalar(
+    f"SELECT count_if(amount = 0) FROM SHOP.GOLD.ORDERS_SNAPSHOT_ICEBERG BEFORE (STATEMENT => '{ice_qid}')"))
+rep["native_version_syntax"] = attempt(lambda: scalar(f"SELECT count(*) FROM {T} AT (VERSION => 1)"))
+
+# %% [markdown]
 # ## Restore: clone the old version (zero-copy), then swap it in
 
 # %%

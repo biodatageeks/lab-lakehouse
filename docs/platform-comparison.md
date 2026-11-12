@@ -25,7 +25,8 @@ eu-north-1 (branch `snowflake-notebooks`). Neither asks for a credit card.
 | | Expectations: drop bad rows | ✅ | ✅ DMF expectations + filter |
 | | Expectations: fail the update | ✅ `FAIL UPDATE` | ⚠️ fail-fast query workaround |
 | | Event log | ✅ event log table | ✅ refresh history (scope to `SHOP`; it is account-wide) |
-| **S4 Time travel** | History, as-of queries | ✅ `DESCRIBE HISTORY`, `VERSION AS OF` | ✅ query history, `BEFORE` / `AT` |
+| **S4 Time travel** | History, as-of queries | ✅ `DESCRIBE HISTORY`, `VERSION AS OF` | ✅ query history, `BEFORE` / `AT` (statement, timestamp, offset) |
+| | Query by version number | ✅ `VERSION AS OF n` | ⚠️ Iceberg tables only: `AT (VERSION => <snapshot id>)`; native tables have no versions |
 | | Restore / undrop | ✅ `RESTORE` | ✅ clone + `SWAP`, `UNDROP` |
 | | Compaction | ✅ `OPTIMIZE` | ⚠️ automatic; clustering keys only |
 | | Purge old versions | ⚠️ `VACUUM`; `RETAIN 0 HOURS` refused | ⚠️ automatic (retention + fail-safe); no `VACUUM` |
