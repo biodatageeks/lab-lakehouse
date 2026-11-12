@@ -132,6 +132,18 @@ Every notebook can be run top to bottom interactively; the defaults are the clas
 
 Interactively, arguments are the defaults in each notebook's `args(...)` line: for run 2 of Session 2, students change it to `args(start=11, count=25, malformed_at=15, with_task=1, ...)`. Class mode: set `interval=60` there to produce one file a minute while the class ingests.
 
+**Session 4 version syntax.** Students coming from Databricks look for `VERSION AS OF n`. Snowflake native tables have no version numbers, so a past state is addressed by statement, timestamp or offset. Iceberg tables do have versions: each commit is a snapshot, read with `AT (VERSION => <snapshot id>)`. The notebook shows both on the same bad update.
+
+| Read the table… | Databricks (Delta) | Snowflake native table | Snowflake Iceberg table |
+| --- | --- | --- | --- |
+| at a version | `VERSION AS OF 3` | not available (`AT (VERSION => 1)` fails: "Invalid data type") | `AT (VERSION => <snapshot id>)` |
+| at a time | `TIMESTAMP AS OF '…'` | `AT (TIMESTAMP => '…'::timestamp_ltz)` | same |
+| some seconds ago | — | `AT (OFFSET => -60)` | same |
+| just before / including a statement | — | `BEFORE / AT (STATEMENT => '<query id>')` | same |
+| list the versions | `DESCRIBE HISTORY` | query history | Iceberg snapshots (Horizon catalog) |
+
+Expected in the notebook: `BEFORE (STATEMENT => $qid)` vs `AT (STATEMENT => $qid)` gives 0 vs 237 zeroed orders (revenue 115,817.83 vs 76,793.88), and the Iceberg copy gives the same two states with `AT (VERSION => $v_before)` and `AT (VERSION => $v_after)`. Pitfall: the snapshot id must be a number, not a quoted string.
+
 **Session 6b runs in Google Colab** (free, browser only), because Snowflake notebooks on a trial have no egress to storage. Setup per student, once:
 
 1. Open `notebooks/colab/06b_open_engines.ipynb` in Colab and run its first two cells. They print a private key and a public key.
