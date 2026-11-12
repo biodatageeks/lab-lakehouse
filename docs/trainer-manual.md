@@ -39,6 +39,53 @@ Eight notebooks, one per session, all run inside Snowflake Workspaces notebooks 
    - Git integration; cost and credit monitoring
    - automated grading against a seeded answer key
 
+## At a glance
+
+Students work only in a browser: Snowsight and Snowflake notebooks for every session, Google Colab for Session 6b.
+
+```mermaid
+flowchart TD
+    A["1 · Sign up: Snowflake 30-day trial<br/>Enterprise, AWS region, no card"] --> B["2 · Snowsight › Workspaces › SQL file<br/>run prep/bootstrap.sql<br/>(LAB_WH, database SHOP, stages, LOAD_COURSE / REBUILD)"]
+    B --> C["3 · Get the course from the public repo<br/>Workspaces › From Git repository<br/>CALL SHOP.OPS.LOAD_COURSE('repo.git@branch')"]
+    C --> D["4 · Snowflake notebooks, in order<br/>00 check · 01 storage · 02 ingestion ×2<br/>03 pipeline (+ live mode) · 04 time travel · 05 dbt · 06 open formats"]
+    D --> E["5 · Session 6b in Google Colab<br/>run first cells → key pair → Colab Secrets<br/>Snowsight: prep/colab_access.sql → run the notebook"]
+    E --> F["6 · 07_ops in Snowflake<br/>tasks, notebook as a job, cost, grading 15/15"]
+    F -. "trial expired? (any session)" .-> G["7 · New trial › bootstrap.sql › LOAD_COURSE<br/>CALL SHOP.OPS.REBUILD(n) → same tables and grades"]
+    G -. "continue with the next session" .-> D
+```
+
+The dashed path is the rebuild on a new trial, which can happen at any session; afterwards the student continues where they left off.
+
+```mermaid
+flowchart LR
+    GH[("GitHub<br/>public repo")] -- "Git integration<br/>LOAD_COURSE" --> COURSE[("@SHOP.OPS.COURSE<br/>notebooks/ · dbt_shop/")]
+
+    subgraph SF["Snowflake trial account"]
+        COURSE --> NB["Snowflake notebooks<br/>Container Runtime · no internet<br/>packages from Snowflake's PyPI mirror"]
+        NB -- "02 · producer.py (seeded)<br/>session.file.put_stream" --> LAND[("@SHOP.BRONZE.LANDING<br/>internal stage<br/>orders · clicks · products")]
+        LAND -- "COPY INTO · Snowpipe<br/>stream on stage + triggered task" --> BRONZE["BRONZE<br/>ORDERS_RAW · CLICKS_RAW<br/>DMF expectations"]
+        BRONZE -- "03 · dynamic tables<br/>(live mode: 1-minute lag)" --> SILVER["SILVER<br/>ORDERS · DIM_PRODUCTS<br/>PRODUCTS_ICEBERG"]
+        SILVER -- "05 · dbt Project<br/>EXECUTE DBT PROJECT" --> GOLD["GOLD<br/>REVENUE_HOURLY · FCT_ORDERS (merge)<br/>DIM_CUSTOMERS · FCT_ORDERS_ICEBERG (Iceberg)"]
+        GOLD -- "06 · Snowpark to_arrow()" --> ENG["Polars · DuckDB<br/>inside the notebook"]
+        ICE[("Snowflake-managed storage (S3)<br/>Iceberg metadata + Parquet")]
+        GOLD -. "Iceberg tables" .-> ICE
+        SILVER -. "Iceberg tables" .-> ICE
+        HZ["Horizon Iceberg REST catalog<br/>/polaris/api/catalog"]
+        HZ -. "metadata" .-> ICE
+        OPS[("OPS · NB_RESULTS<br/>every notebook's report")]
+    end
+
+    subgraph COLAB["Google Colab (6b)"]
+        OE["Session 6b · has internet<br/>PyIceberg · Polars scan_iceberg<br/>DuckDB iceberg · PySpark + Iceberg"]
+    end
+
+    OE -- "1 · key-pair JWT → OAuth token<br/>LAB_COLAB / LAB_READER" --> HZ
+    HZ -- "2 · metadata + vended S3 credentials" --> OE
+    OE -- "3 · reads manifests + Parquet directly" --> ICE
+```
+
+The generator runs inside the `02_ingestion` notebook and writes files to the internal stage; every table lives in Snowflake, the Iceberg ones on Snowflake-managed storage. Only Colab reads those Iceberg files directly, through Horizon's vended credentials.
+
 ## Before the course
 
 The one decision to make up front is the schedule against the **30-day trial**: a course longer than four weeks needs every student to move to a second trial, which the rebuild procedure handles (see *Trial expired*).
