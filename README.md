@@ -3,12 +3,71 @@
 Course repo and feature test-suite for **Lakehouse Basics on a Snowflake trial account**:
 the same six sessions as the Databricks Free Edition version (storage, ingestion,
 declarative pipelines, time travel, dbt, open formats) plus operations — and **everything
-runs inside Snowflake notebooks**. Students need a browser and a trial account; no laptop
-installs, no credit card, no cloud bucket of their own.
+runs inside Snowflake notebooks**, except Session 6b, which runs in Google Colab. Students
+need only a browser, a trial account and a Google account: no laptop installs, no credit card,
+no cloud bucket of their own.
 
 What works and what doesn't on a trial, with evidence: [docs/snowflake-feasibility.md](docs/snowflake-feasibility.md).
 For trainers (topics, setup, session guide with expected results, grading, troubleshooting): [docs/trainer-manual.md](docs/trainer-manual.md).
 Databricks Free Edition vs Snowflake trial, feature by feature: [docs/platform-comparison.md](docs/platform-comparison.md).
+
+## What a student does
+
+Browser only: Snowsight (Snowflake's web UI) and Google Colab.
+
+```mermaid
+flowchart TD
+    A["1 · Sign up: Snowflake 30-day trial<br/>Enterprise, AWS region, no card"] --> B["2 · Snowsight › Workspaces › SQL file<br/>run prep/bootstrap.sql<br/>(LAB_WH, database SHOP, stages, LOAD_COURSE / REBUILD)"]
+    B --> C["3 · Get the course from the public repo<br/>Workspaces › From Git repository<br/>CALL SHOP.OPS.LOAD_COURSE('repo.git@branch')"]
+    C --> D["4 · Snowflake notebooks, in order<br/>00 check · 01 storage · 02 ingestion ×2<br/>03 pipeline (+ live mode) · 04 time travel · 05 dbt · 06 open formats"]
+    D --> E["5 · Session 6b in Google Colab<br/>run first cells → key pair → Colab Secrets<br/>Snowsight: prep/colab_access.sql → run the notebook"]
+    E --> F["6 · 07_ops in Snowflake<br/>tasks, notebook as a job, cost, grading 15/15"]
+    F -. "trial expired? (any session)" .-> G["7 · New trial › bootstrap.sql › LOAD_COURSE<br/>CALL SHOP.OPS.REBUILD(n) → same tables and grades"]
+    G -. "continue with the next session" .-> D
+```
+
+## Architecture and data flow
+
+Everything except Session 6b stays inside the Snowflake account. The data generator runs in a
+Snowflake notebook. Files land in an internal stage, and tables live on Snowflake storage.
+Iceberg tables are on Snowflake-managed storage, with no bucket of your own.
+
+```mermaid
+flowchart LR
+    GH[("GitHub<br/>public repo")] -- "Git integration<br/>LOAD_COURSE" --> COURSE[("@SHOP.OPS.COURSE<br/>notebooks/ · dbt_shop/")]
+
+    subgraph SF["Snowflake trial account"]
+        COURSE --> NB["Snowflake notebooks<br/>Container Runtime · no internet<br/>packages from Snowflake's PyPI mirror"]
+        NB -- "02 · producer.py (seeded)<br/>session.file.put_stream" --> LAND[("@SHOP.BRONZE.LANDING<br/>internal stage<br/>orders · clicks · products")]
+        LAND -- "COPY INTO · Snowpipe<br/>stream on stage + triggered task" --> BRONZE["BRONZE<br/>ORDERS_RAW · CLICKS_RAW<br/>DMF expectations"]
+        BRONZE -- "03 · dynamic tables<br/>(live mode: 1-minute lag)" --> SILVER["SILVER<br/>ORDERS · DIM_PRODUCTS<br/>PRODUCTS_ICEBERG"]
+        SILVER -- "05 · dbt Project<br/>EXECUTE DBT PROJECT" --> GOLD["GOLD<br/>REVENUE_HOURLY · FCT_ORDERS (merge)<br/>DIM_CUSTOMERS · FCT_ORDERS_ICEBERG (Iceberg)"]
+        GOLD -- "06 · Snowpark to_arrow()" --> ENG["Polars · DuckDB<br/>inside the notebook"]
+        ICE[("Snowflake-managed storage (S3)<br/>Iceberg metadata + Parquet")]
+        GOLD -. "Iceberg tables" .-> ICE
+        SILVER -. "Iceberg tables" .-> ICE
+        HZ["Horizon Iceberg REST catalog<br/>/polaris/api/catalog"]
+        HZ -. "metadata" .-> ICE
+        OPS[("OPS · NB_RESULTS<br/>every notebook's report")]
+    end
+
+    subgraph COLAB["Google Colab (6b)"]
+        OE["Session 6b · has internet<br/>PyIceberg · Polars scan_iceberg<br/>DuckDB iceberg · PySpark + Iceberg"]
+    end
+
+    OE -- "1 · key-pair JWT → OAuth token<br/>LAB_COLAB / LAB_READER" --> HZ
+    HZ -- "2 · metadata + vended S3 credentials" --> OE
+    OE -- "3 · reads manifests + Parquet directly" --> ICE
+```
+
+| What | Where it runs or is stored |
+| --- | --- |
+| Data generator (`notebooks/producer.py`) | inside the Snowflake notebook `02_ingestion` (and `03_pipeline` live mode) |
+| Raw files | internal stage `SHOP.BRONZE.LANDING` |
+| Bronze / silver / gold | Snowflake native and dynamic tables; Iceberg tables on Snowflake-managed storage |
+| dbt | a dbt Project object in Snowflake, built from `@SHOP.OPS.COURSE/dbt_shop` |
+| Open engines on the live Iceberg files | Google Colab only (Session 6b) |
+| Your laptop | nothing but a browser |
 
 ## For students
 
