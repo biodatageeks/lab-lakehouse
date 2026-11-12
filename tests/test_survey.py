@@ -69,7 +69,7 @@ def test_2_file_arrival_trigger():
 
 def test_3_analysis():
     r = nb("03_analysis")
-    assert r["per_year"] == {k: v for k, v in r["per_year"].items()} and len(r["per_year"]) == 3
+    assert len(r["per_year"]) == 3  # respondents with a country, per year
     assert r["top_country"] == "United States"
     assert set(r["python_share"]) == {"2023", "2024", "2025"}
     assert r["pay_countries"] > 5 and r["ds_languages"] > 5
@@ -77,9 +77,14 @@ def test_3_analysis():
 
 def test_4_time_travel():
     r = nb("04_time_travel")
-    ops = r["operations"]
-    assert ops[:7] == ["CREATE TABLE AS SELECT", "WRITE", "UPDATE", "DELETE", "MERGE", "ADD COLUMNS", "OPTIMIZE"], ops
-    assert ops[7:] == ["MERGE", "RESTORE", "RESTORE"], ops
-    v1, v2 = r["avg_pay_2024_v1_v2"]
-    assert v2 == pytest.approx(v1 * 100, rel=1e-3)
-    assert int(r["deleted_v3"]) > 0 and r["before_after_rows"] == 10
+    # each step is its own commit; Databricks may add extra ones (auto-compaction OPTIMIZE)
+    assert r["steps"] == {
+        "create": "CREATE TABLE AS SELECT", "insert": "WRITE", "bad_update": "UPDATE", "delete": "DELETE",
+        "merge": "MERGE", "add_column": "ADD COLUMNS", "optimize": "OPTIMIZE", "repair": "MERGE",
+        "restore_old": "RESTORE", "restore_repaired": "RESTORE"}, r["operations"]
+    versions = list(r["versions"].values())
+    assert versions == sorted(versions) and len(set(versions)) == len(versions)
+    before, after = r["avg_pay_2024_before_after"]
+    assert after == pytest.approx(before * 100, rel=1e-3)
+    assert int(r["deleted_rows"]) > 0 and r["before_after_rows"] == 10
+    assert r["bronze_time_travel"] == {"2023": ROWS["2023"], "2024": ROWS["2024"]}, "time travel on the pipeline's bronze table"

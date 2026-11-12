@@ -51,6 +51,8 @@ Bronze ends with 249 columns (all years' columns + `year`, `_source_file`, `_ing
 | the trigger waits ~60 s after the last change, then the run starts | `wait_after_last_change_seconds = 60`, so a file copied in several steps is not loaded half-written. Measured: run starts ~90 s after the file lands | notebook 2 |
 | the Databricks SDK preinstalled in notebooks is older than some pipeline settings | `helpers.py` calls the REST API directly | `helpers.py` |
 | pipeline tables are not for experiments | a full refresh rewrites them, materialized views accept no DML → notebook 4 uses its own Delta table | notebook 4 |
+| version numbers are not always "ours" | Databricks can add its own commits, e.g. an automatic `OPTIMIZE` (auto compaction) right after the repair `MERGE` — seen in a test run. Notebook 4 notes the version after each step instead of hard-coding 0-9 | notebook 4 |
+| time travel on the pipeline's streaming table | works: `SELECT … FROM survey.bronze.responses VERSION AS OF <n>` returns 2023 + 2024 only, i.e. bronze before 2025 arrived | notebook 4 |
 
 ## Task hints
 
@@ -59,8 +61,18 @@ Bronze ends with 249 columns (all years' columns + `year`, `_source_file`, `_ing
 * **Task 2** (notebook 2): the last update wrote 49 191 rows to bronze — only the 2025 file; the
   checkpoint remembers which files were loaded.
 * **Task 3** (notebook 3): `gold.databases_pro` per year; `ed_level` of 2025; pay by `work_mode`.
-* **Task 4** (notebook 4): `numDeletedRows` is on version 3; the "exist in v2 but not v3" query is
-  `SELECT … FROM t VERSION AS OF 2 EXCEPT SELECT … FROM t VERSION AS OF 3` (the students).
+* **Task 4** (notebook 4): `numDeletedRows` is on the `DELETE` version (usually 3); the query is
+  `SELECT … FROM t VERSION AS OF 2 EXCEPT SELECT … FROM t VERSION AS OF 3` — the students.
+
+## Timings measured on Free Edition (2026-11-12)
+
+| step | time |
+|---|---|
+| download one year into the volume | 3-10 s |
+| first load, 2023 + 2024 (job run incl. pipeline start-up) | 82-102 s |
+| 2025 file lands → job starts (file arrival trigger) | 82-86 s |
+| pipeline run for 2025 (new columns, silver + gold recomputed) | 162-173 s |
+| whole test-suite (reset + notebooks 0-4) | ~11 min |
 
 ## Starting over / a new account
 

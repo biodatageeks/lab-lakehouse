@@ -38,10 +38,10 @@ flowchart LR
 | notebook | what happens | time |
 |---|---|---|
 | `00_setup` | catalog `survey`, schemas, volume; look at the files before loading (size, columns, LFS, BOM) | 1 min |
-| `01_pipeline` | creates the pipeline and the job; downloads 2023 + 2024; first load (*Run now*) | 3-4 min |
+| `01_pipeline` | downloads 2023 + 2024; creates the pipeline and the job; first load (*Run now*) | 3-4 min |
 | `02_new_data_arrives` | downloads 2025 — the **trigger** starts the pipeline on its own; schema evolution; history | 4-5 min |
 | `03_analysis` | Spark SQL → pandas → charts (languages, pay, AI, remote work, heatmap) | 2 min |
-| `04_time_travel` | versions 0-9 of a Delta table: wrong update, before/after, repair, `RESTORE` | 1 min |
+| `04_time_travel` | ten versions of a Delta table: wrong update, before/after, repair, `RESTORE`; time travel on bronze | 1 min |
 | `99_reset` | deletes job, pipeline and the catalog — start over | 1 min |
 
 While notebooks 1 and 2 wait, open **Jobs & Pipelines**: the job's runs (trigger *One time*, then

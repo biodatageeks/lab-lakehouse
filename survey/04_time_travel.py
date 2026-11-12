@@ -9,15 +9,18 @@
 # MAGIC its tables — a full refresh rewrites them and materialized views accept no `UPDATE` — so for
 # MAGIC experiments we make a plain Delta table and change it step by step:
 # MAGIC
-# MAGIC | version | operation |
-# MAGIC |---|---|
-# MAGIC | 0 | `CREATE TABLE … AS SELECT` 2023 |
-# MAGIC | 1 | `INSERT` 2024 |
-# MAGIC | 2 | a **wrong** `UPDATE` (pay × 100) |
-# MAGIC | 3 | `DELETE` students |
-# MAGIC | 4 | `MERGE` 2025 |
-# MAGIC | 5 | `ALTER TABLE … ADD COLUMN` |
-# MAGIC | 6 | `OPTIMIZE` |
+# MAGIC | step | operation | version (usually) |
+# MAGIC |---|---|---|
+# MAGIC | create | `CREATE TABLE … AS SELECT` 2023 | 0 |
+# MAGIC | insert | `INSERT` 2024 | 1 |
+# MAGIC | bad_update | a **wrong** `UPDATE` (pay × 100) | 2 |
+# MAGIC | delete | `DELETE` students | 3 |
+# MAGIC | merge | `MERGE` 2025 | 4 |
+# MAGIC | add_column | `ALTER TABLE … ADD COLUMN` | 5 |
+# MAGIC | optimize | `OPTIMIZE` | 6 |
+# MAGIC
+# MAGIC "Usually": Databricks may add commits of its own — e.g. an automatic `OPTIMIZE` (auto compaction)
+# MAGIC after a write that left many small files. So we note the version after each step instead of assuming it.
 
 # COMMAND ----------
 
@@ -25,19 +28,26 @@ import json
 T = "survey.lab.responses_poland"
 COLS = "year, response_id, age_band, dev_type, is_employed, comp_usd_yearly, work_mode, ai_use"
 src = lambda y: f"SELECT {COLS} FROM survey.silver.responses WHERE country = 'Poland' AND year = {y}"
+v = {}  # step name -> table version right after that step
+
+
+def step(name, statement):
+    spark.sql(statement)
+    v[name] = spark.sql(f"DESCRIBE HISTORY {T} LIMIT 1").collect()[0].version
 
 # COMMAND ----------
 
 spark.sql(f"DROP TABLE IF EXISTS {T}")
-spark.sql(f"CREATE TABLE {T} AS {src(2023)}")                                   # v0
-spark.sql(f"INSERT INTO {T} {src(2024)}")                                       # v1
-spark.sql(f"UPDATE {T} SET comp_usd_yearly = comp_usd_yearly * 100 WHERE year = 2024")  # v2 - the mistake
-spark.sql(f"DELETE FROM {T} WHERE dev_type = 'Student'")                        # v3
-spark.sql(f"""MERGE INTO {T} t USING ({src(2025)}) s
-              ON t.year = s.year AND t.response_id = s.response_id
-              WHEN NOT MATCHED THEN INSERT *""")                                # v4
-spark.sql(f"ALTER TABLE {T} ADD COLUMN reviewed BOOLEAN")                       # v5
-spark.sql(f"OPTIMIZE {T}")                                                      # v6
+step("create", f"CREATE TABLE {T} AS {src(2023)}")
+step("insert", f"INSERT INTO {T} {src(2024)}")
+step("bad_update", f"UPDATE {T} SET comp_usd_yearly = comp_usd_yearly * 100 WHERE year = 2024")  # the mistake
+step("delete", f"DELETE FROM {T} WHERE dev_type = 'Student'")
+step("merge", f"""MERGE INTO {T} t USING ({src(2025)}) s
+                  ON t.year = s.year AND t.response_id = s.response_id
+                  WHEN NOT MATCHED THEN INSERT *""")
+step("add_column", f"ALTER TABLE {T} ADD COLUMN reviewed BOOLEAN")
+step("optimize", f"OPTIMIZE {T}")
+print(v)
 
 # COMMAND ----------
 
@@ -58,25 +68,26 @@ display(history.select("version", "timestamp", "userName", "operation", "operati
 # COMMAND ----------
 
 display(spark.sql(f"""
-  SELECT 'v' || v AS version, year, count(*) AS rows, round(avg(comp_usd_yearly)) AS avg_pay FROM (
-    SELECT 0 AS v, * FROM {T} VERSION AS OF 0 UNION ALL
-    SELECT 1, *      FROM {T} VERSION AS OF 1 UNION ALL
-    SELECT 2, *      FROM {T} VERSION AS OF 2 UNION ALL
-    SELECT 3, *      FROM {T} VERSION AS OF 3 UNION ALL
-    SELECT 4, *      FROM {T} VERSION AS OF 4)
+  SELECT version, year, count(*) AS rows, round(avg(comp_usd_yearly)) AS avg_pay FROM (
+    SELECT {v['create']} AS version, * FROM {T} VERSION AS OF {v['create']} UNION ALL
+    SELECT {v['insert']}, *            FROM {T} VERSION AS OF {v['insert']} UNION ALL
+    SELECT {v['bad_update']}, *        FROM {T} VERSION AS OF {v['bad_update']} UNION ALL
+    SELECT {v['delete']}, *            FROM {T} VERSION AS OF {v['delete']} UNION ALL
+    SELECT {v['merge']}, *             FROM {T} VERSION AS OF {v['merge']})
   GROUP BY ALL ORDER BY 1, 2"""))
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ### Before and after the wrong update
-# MAGIC The same rows in version 1 (before) and version 2 (after):
+# MAGIC The same rows in the version before the update (1) and right after it (2).
+# MAGIC In plain SQL: `SELECT … FROM survey.lab.responses_poland VERSION AS OF 1` vs. `VERSION AS OF 2`.
 
 # COMMAND ----------
 
 before_after = spark.sql(f"""
   SELECT b.response_id, b.comp_usd_yearly AS before_update, a.comp_usd_yearly AS after_update
-  FROM {T} VERSION AS OF 1 b JOIN {T} VERSION AS OF 2 a USING (year, response_id)
+  FROM {T} VERSION AS OF {v['insert']} b JOIN {T} VERSION AS OF {v['bad_update']} a USING (year, response_id)
   WHERE b.year = 2024 AND b.comp_usd_yearly IS NOT NULL
   ORDER BY b.response_id LIMIT 10""")
 display(before_after)
@@ -88,8 +99,8 @@ display(before_after)
 
 # COMMAND ----------
 
-ts_v1 = history.filter("version = 1").collect()[0].timestamp
-print("version 1 was written at", ts_v1)
+ts_v1 = history.filter(f"version = {v['insert']}").collect()[0].timestamp
+print(f"version {v['insert']} was written at", ts_v1)
 display(spark.sql(f"SELECT year, count(*) FROM {T} TIMESTAMP AS OF '{ts_v1}' GROUP BY year"))
 
 # COMMAND ----------
@@ -101,9 +112,10 @@ display(spark.sql(f"SELECT year, count(*) FROM {T} TIMESTAMP AS OF '{ts_v1}' GRO
 
 # COMMAND ----------
 
-spark.sql(f"""MERGE INTO {T} t USING (SELECT year, response_id, comp_usd_yearly FROM {T} VERSION AS OF 1 WHERE year = 2024) old
-              ON t.year = old.year AND t.response_id = old.response_id
-              WHEN MATCHED THEN UPDATE SET t.comp_usd_yearly = old.comp_usd_yearly""")   # v7
+step("repair", f"""MERGE INTO {T} t
+    USING (SELECT year, response_id, comp_usd_yearly FROM {T} VERSION AS OF {v['insert']} WHERE year = 2024) old
+    ON t.year = old.year AND t.response_id = old.response_id
+    WHEN MATCHED THEN UPDATE SET t.comp_usd_yearly = old.comp_usd_yearly""")
 display(spark.sql(f"SELECT year, round(avg(comp_usd_yearly)) AS avg_pay FROM {T} GROUP BY year ORDER BY year"))
 
 # COMMAND ----------
@@ -114,9 +126,10 @@ display(spark.sql(f"SELECT year, round(avg(comp_usd_yearly)) AS avg_pay FROM {T}
 
 # COMMAND ----------
 
-spark.sql(f"RESTORE TABLE {T} TO VERSION AS OF 1")   # v8: back to 2023 + 2024, before the mistake
+step("restore_old", f"RESTORE TABLE {T} TO VERSION AS OF {v['insert']}")   # 2023 + 2024, before the mistake
 print("after restore:", spark.table(T).count(), "rows,", len(spark.table(T).columns), "columns")
-spark.sql(f"RESTORE TABLE {T} TO VERSION AS OF 7")   # v9: back to the repaired table
+step("restore_repaired", f"RESTORE TABLE {T} TO VERSION AS OF {v['repair']}")   # back to the repaired table
+print(v)
 display(spark.sql(f"DESCRIBE HISTORY {T}").select("version", "operation", "operationParameters").orderBy("version"))
 
 # COMMAND ----------
@@ -144,7 +157,7 @@ except Exception as e:  # noqa: BLE001
 # MAGIC %md
 # MAGIC ## <span style='background:yellow'> TASK 4 </span>
 # MAGIC * Which version deleted the most rows? (`operationMetrics.numDeletedRows`)
-# MAGIC * Write one query that lists the respondents who exist in version 2 but not in version 3. What were they?
+# MAGIC * Write one query that lists the respondents who exist in the version before the `DELETE` but not after it. What were they?
 # MAGIC * Open the table in Catalog Explorer: find the `RESTORE` entries in *History*.
 
 # COMMAND ----------
@@ -152,9 +165,12 @@ except Exception as e:  # noqa: BLE001
 final = spark.sql(f"DESCRIBE HISTORY {T}").orderBy("version").collect()
 dbutils.notebook.exit(json.dumps({
     "operations": [r.operation for r in final],
+    "steps": {name: final[ver].operation for name, ver in v.items()},
+    "versions": v,
     "rows_now": spark.table(T).count(),
-    "avg_pay_2024_v1_v2": [spark.sql(f"SELECT round(avg(comp_usd_yearly)) FROM {T} VERSION AS OF {v} WHERE year = 2024").collect()[0][0] for v in (1, 2)],
-    "deleted_v3": final[3].operationMetrics.get("numDeletedRows"),
+    "avg_pay_2024_before_after": [spark.sql(f"SELECT round(avg(comp_usd_yearly)) FROM {T} VERSION AS OF {x} WHERE year = 2024").collect()[0][0]
+                                  for x in (v["insert"], v["bad_update"])],
+    "deleted_rows": final[v["delete"]].operationMetrics.get("numDeletedRows"),
     "before_after_rows": before_after.count(),
     "bronze_time_travel": bronze_time_travel,
 }, default=str))
