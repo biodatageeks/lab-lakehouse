@@ -16,6 +16,7 @@ def test_three_engines_agree(out, record):
     record("s6.timings", {k: out[k] for k in ("snowflake_s", "to_arrow_s", "polars_s", "duckdb_s")})
     assert out["arrow_rows"] == out["polars_rows"] == K["silver_orders_rows"]
     assert out["engines_agree"] is True
+    assert out["fct_orders_iceberg_rows"] == K["silver_orders_rows"]  # published for Session 6b
 
 
 def test_iceberg_metadata_and_time_travel(out, record):

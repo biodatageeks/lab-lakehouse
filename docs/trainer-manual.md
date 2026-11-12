@@ -33,7 +33,7 @@ Eight notebooks, one per session, all run inside Snowflake Workspaces notebooks 
    - an Iceberg model (custom materialization)
 6. **Open formats and multiple engines** (`06_open_formats`)
    - one governed table read by Snowflake SQL, **Polars** and **DuckDB** through Apache Arrow
-   - Iceberg snapshots and time travel; what open clients can and cannot do from inside the platform
+   - Iceberg snapshots and time travel; what open clients can and cannot do from inside the platform; **6b, in Google Colab** (`colab/06b_open_engines`): PyIceberg, Polars, DuckDB and PySpark read the live Iceberg files through the Horizon REST catalog
 7. **Operations** (`07_ops`)
    - scheduled serverless tasks; a task that runs a notebook (a "job")
    - Git integration; cost and credit monitoring
@@ -83,6 +83,15 @@ Every notebook can be run top to bottom interactively; the defaults are the clas
 | 7 Operations | `07_ops --files 35 --malformed-at 15` | ≥2 heartbeats from the 1-minute task; the notebook task `SUCCEEDED`; Git repo copied to a stage; credits by service listed; grading **15/15** | tasks = schedules; a task running `EXECUTE NOTEBOOK PROJECT` = a job; resource monitors cap warehouses only | a headless notebook takes ~2 min to start; usage views lag by hours |
 
 Interactively, arguments are the defaults in each notebook's `args(...)` line: for run 2 of Session 2, students change it to `args(start=11, count=25, malformed_at=15, with_task=1, ...)`. Class mode: set `interval=60` there to produce one file a minute while the class ingests.
+
+**Session 6b runs in Google Colab** (free, browser only), because Snowflake notebooks on a trial have no egress to storage. Setup per student, once:
+
+1. Open `notebooks/colab/06b_open_engines.ipynb` in Colab and run its first two cells. They print a private key and a public key.
+2. In Colab → Secrets, add `SNOWFLAKE_ACCOUNT` (`ORGNAME-ACCOUNTNAME`) and `SNOWFLAKE_PRIVATE_KEY`, and grant the notebook access.
+3. In Snowflake, run `prep/colab_access.sql` with the public key pasted in. It creates read-only role `LAB_READER` and service user `LAB_COLAB`.
+4. Run the notebook top to bottom (about 2 minutes, including installs).
+
+Expected: the role sees 3 Iceberg tables (`GOLD.FCT_ORDERS_ICEBERG`, `GOLD.DIM_CUSTOMERS`, `SILVER.PRODUCTS_ICEBERG`). `FCT_ORDERS_ICEBERG` has 700 rows. Snowflake SQL, Polars, DuckDB and Spark give the same per-category counts and revenue ("all engines agree: True"). Spark `VERSION AS OF` the first `DIM_CUSTOMERS` snapshot returns 188 rows. Talking points: catalog vs data path, vended credentials, why the same code fails inside a Snowflake notebook. Pitfall: Spark needs `spark.sql.iceberg.vectorization.enabled=false`, already set. After the course, revoke the key with `ALTER USER LAB_COLAB UNSET RSA_PUBLIC_KEY`.
 
 ## Trial expired: rebuild on a new account
 
@@ -135,7 +144,7 @@ None of these blocks a session; each has a workaround already in the notebooks. 
 | --- | --- | --- |
 | 30-day trial | account suspended after 30 days | second trial + `REBUILD` |
 | No external access integrations | "External access is not supported for trial accounts"; any internet URL fails with a DNS error | packages from Snowflake's PyPI mirror via `requirements.txt` |
-| Open clients can't read Iceberg data in a notebook | PyIceberg loads metadata, then `AWS Error NETWORK_CONNECTION` | read through Snowflake, hand over as Arrow to Polars / DuckDB |
+| Open clients can't read Iceberg data in a notebook | PyIceberg loads metadata, then `AWS Error NETWORK_CONNECTION` | read through Snowflake, hand over as Arrow to Polars / DuckDB; for the live files, Session 6b in Google Colab |
 | No DuckDB extensions | `INSTALL iceberg` fails | DuckDB on Arrow tables only |
 | Classic notebooks disabled | "Creation of legacy notebooks has been disabled" | Workspaces notebooks on Container Runtime |
 | Private Git repo | "Operation 'clone' is not authorized" | public repo, or upload the folders to a stage |
@@ -177,6 +186,8 @@ The harness runs from a staff laptop with a key-pair connection. It deploys the 
 - `uv run pytest`: bootstrap, reset `SHOP`, deploy, sessions 0–7 (~30 min)
 - `LAB_NEW_ACCOUNT=1 uv run pytest tests/test_s9_new_account.py`: drops `SHOP`, the warehouse and the monitor, then rebuilds like a new trial (~20 min)
 - `uv run python -m lab.build`: regenerate `notebooks/*.ipynb` after editing `notebooks/src/*.py`
+
+Session 6b is verified by `LAB_COLAB=1 uv run pytest tests/test_s6b_colab.py` (needs Docker; about 1 minute). It runs the Colab notebook code in a clean Python 3.12 Linux container with Java 17 as `LAB_COLAB`: 3 passed, all five readers agree.
 
 Still open:
 

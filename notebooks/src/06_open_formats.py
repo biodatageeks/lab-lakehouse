@@ -81,6 +81,17 @@ if isinstance(p, int):
             f"SELECT count(*) FROM SHOP.SILVER.PRODUCTS_ICEBERG AT (TIMESTAMP => TO_TIMESTAMP_LTZ({p}, 3))")}
 
 # %% [markdown]
+# ## Publish an Iceberg copy of the fact table for engines outside Snowflake (Session 6b)
+# Horizon serves Iceberg tables only; `FCT_ORDERS` is a native table, so we publish a copy.
+# Iceberg stores timestamps in microseconds: cast `TIMESTAMP_NTZ(9)` down to `(6)`.
+
+# %%
+sql(f"""CREATE OR REPLACE ICEBERG TABLE SHOP.GOLD.FCT_ORDERS_ICEBERG
+        CATALOG = 'SNOWFLAKE' EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED'
+        AS SELECT * REPLACE (order_ts::TIMESTAMP_NTZ(6) AS order_ts) FROM {a.table}""")
+rep["fct_orders_iceberg_rows"] = scalar("SELECT count(*) FROM SHOP.GOLD.FCT_ORDERS_ICEBERG")
+
+# %% [markdown]
 # ## What open clients can and cannot do from here
 
 # %%

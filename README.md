@@ -28,6 +28,12 @@ For trainers (topics, setup, session guide with expected results, grading, troub
 | `05_dbt` | 5 | **dbt Projects on Snowflake**: incremental merge, Iceberg model, tests, docs |
 | `06_open_formats` | 6 | Snowflake SQL vs **Polars** vs **DuckDB** via Arrow; Iceberg snapshots + time travel |
 | `07_ops` | 7 | scheduled task, task-run notebook (a "job"), Git → stage, credits, grading |
+| `colab/06b_open_engines` | 6b | **outside Snowflake** (Google Colab): PyIceberg, Polars, DuckDB and PySpark read the Iceberg files directly via the Horizon REST catalog |
+
+Session 6b is the one part that runs in **Google Colab** (free, browser only): Snowflake notebooks
+on a trial have no egress to storage, so open engines can't read Iceberg files there. Colab can.
+Setup: run the notebook's first cells (they make a key pair), add the Colab secrets, then run
+[`prep/colab_access.sql`](prep/colab_access.sql) (read-only role `LAB_READER`, service user `LAB_COLAB`).
 
 ### Trial expired? Rebuild on a new account
 
@@ -59,6 +65,7 @@ LAB_NEW_ACCOUNT=1 uv run pytest tests/test_s9_new_account.py   # drop everything
 uv run python -m lab.build        # rebuild notebooks/*.ipynb from notebooks/src/*.py after editing
 uv run python -m lab.runner run 02_ingestion --start 1 --count 10   # one notebook, prints its report
 LAB_NO_RESET=1 LAB_NO_DEPLOY=1 uv run pytest tests/test_s6_open_formats.py
+LAB_COLAB=1 uv run pytest tests/test_s6b_colab.py   # Colab stand-in: clean Linux container + Java 17 (needs Docker)
 ```
 
 Findings (timings, error texts, what each probe returned) go to `reports/findings.json`.
@@ -67,9 +74,9 @@ Findings (timings, error texts, what each probe returned) go to `reports/finding
 
 ```
 prep/        bootstrap.sql (account setup + LOAD_COURSE / REBUILD procedures), new_account.sql (expired trial),
-             reset.sql (harness: wipe course state)
+             colab_access.sql (Session 6b read-only access), reset.sql (harness: wipe course state)
 notebooks/   *.ipynb (generated, what students open), src/*.py (sources), lab_nb.py, producer.py, grade.py,
-             requirements.txt
+             requirements.txt, colab/ (Session 6b notebook for Google Colab)
 dbt_shop/    dbt project run natively (EXECUTE DBT PROJECT); macros/iceberg_table.sql
 lab/         harness: connection, notebook build, deploy + headless runner
 tests/       test_s0 … test_s7, one file per session; test_s9_new_account (opt-in); offline test_build

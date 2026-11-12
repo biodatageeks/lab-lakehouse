@@ -43,12 +43,34 @@ Snowflake-managed storage). The real constraints are **account-level**, not feat
 | 7 Git | Git folder from public repo | Git API integration + `GIT REPOSITORY` (public repo), `COPY FILES` to a stage | ✅ public only |
 | 7 Cost | `system.billing.usage` (1-day lag) | `ACCOUNT_USAGE.METERING_HISTORY`, `ORGANIZATION_USAGE.REMAINING_BALANCE_DAILY`, resource monitor | ✅ |
 
+## Session 6b: open engines on the live Iceberg files, from Google Colab
+
+Inside a trial notebook no engine can reach the Iceberg data files (below). From a hosted
+notebook with internet — **Google Colab** (free, no card; Kaggle and Codespaces work the same way)
+— they can, through the Horizon Iceberg REST catalog with vended credentials, on
+Snowflake-managed storage (no bucket of your own). Verified with `tests/test_s6b_colab.py`, which
+runs `notebooks/colab/src/06b_open_engines.py` in a clean `python:3.12` Linux container with
+Java 17 as the read-only service user from `prep/colab_access.sql`:
+
+| Engine (outside Snowflake) | How | Result |
+| --- | --- | --- |
+| PyIceberg 0.12 | REST catalog, `X-Iceberg-Access-Delegation: vended-credentials` | ✅ 700 rows; time travel to the first `DIM_CUSTOMERS` snapshot (188) |
+| Polars 2.1 | `pl.scan_iceberg(table, storage_options=<vended S3 keys>)` | ✅ same per-category result as Snowflake |
+| DuckDB 2.0 | `iceberg` extension, `ATTACH … (TYPE iceberg, ACCESS_DELEGATION_MODE 'vended_credentials')` | ✅ same result |
+| PySpark 3.5.6 + Iceberg 1.9.1 | `spark.jars.packages` iceberg-spark-runtime + iceberg-aws-bundle, REST catalog | ✅ same result, `VERSION AS OF`, `.snapshots` table — needs `spark.sql.iceberg.vectorization.enabled=false` (the vectorized reader fails on Snowflake-written Parquet) |
+
+Notes: Horizon serves **Iceberg tables only**, so Session 6 publishes `GOLD.FCT_ORDERS_ICEBERG`
+(timestamps cast to microseconds). Auth is key-pair JWT → OAuth token (`session:role:LAB_READER`);
+the private key lives in Colab Secrets, and access is revoked with `ALTER USER LAB_COLAB UNSET
+RSA_PUBLIC_KEY`. The role sees only the three Iceberg tables. Data and credentials leave Snowflake
+— fine for this synthetic data.
+
 ## Not possible / limits found
 
 | Limit | Evidence | Impact / workaround |
 | --- | --- | --- |
 | External access integrations | `External access is not supported for trial accounts.` | No internet from notebooks/procedures (DNS fails for pypi.org, github.com). Packages: use the PyPI mirror in `requirements.txt`. |
-| Open-catalog **data** reads inside notebooks | PyIceberg via Horizon loads metadata, then `AWS Error NETWORK_CONNECTION` on the first manifest | Read via Snowflake → Arrow. (From a laptop the same Horizon endpoint *does* serve data with vended credentials — verified with PyIceberg, DuckDB `iceberg` and Polars — but laptops are out of scope.) |
+| Open-catalog **data** reads inside notebooks | PyIceberg via Horizon loads metadata, then `AWS Error NETWORK_CONNECTION` on the first manifest; Polars `scan_iceberg`: `Could not resolve` (no DNS for any storage host) | Read via Snowflake → Arrow, PySpark via Snowpark Connect, or unload Parquet to a stage → `GET` → `scan_parquet`. For the live files use Session 6b in Google Colab. |
 | DuckDB extensions | `INSTALL iceberg` needs extensions.duckdb.org | Use DuckDB on Arrow tables only. |
 | Classic notebooks | `Creation of legacy notebooks has been disabled for this account.` | Use Workspaces notebooks (`CREATE NOTEBOOK PROJECT` / `EXECUTE NOTEBOOK PROJECT`). |
 | Notebook project straight from Git | `Invalid domain to copy files: 'Git repository'` | `COPY FILES` from the repo into a stage, then create the project (`SHOP.OPS.LOAD_COURSE`), or use *Workspaces → From Git repository*. |

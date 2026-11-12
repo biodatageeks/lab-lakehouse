@@ -173,6 +173,7 @@ name = "lab-lakehouse-snowflake"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "pytest" },
     { name = "python-dotenv" },
     { name = "snowflake-connector-python" },
@@ -180,6 +181,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=50.0.2" },
     { name = "pytest", specifier = ">=8" },
     { name = "python-dotenv", specifier = ">=1" },
     { name = "snowflake-connector-python", specifier = ">=3.12" },

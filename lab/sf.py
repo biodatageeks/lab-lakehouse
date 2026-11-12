@@ -50,6 +50,13 @@ def scalar(query: str, params=None):
     return rows[0][0] if rows else None
 
 
-def run_script(path: Path) -> None:
-    for cur in conn().execute_string(path.read_text()):
-        cur.fetchall() if cur.description else None
+def run_script(path: Path | str) -> None:
+    """Run a multi-statement SQL script (a path or the text itself), skipping comment-only chunks."""
+    import io
+
+    from snowflake.connector.util_text import split_statements
+
+    text = path.read_text() if isinstance(path, Path) else path
+    for stmt, _ in split_statements(io.StringIO(text), remove_comments=False):
+        if any(ln.strip() and not ln.strip().startswith("--") for ln in stmt.splitlines()):
+            sql(stmt)

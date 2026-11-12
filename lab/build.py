@@ -16,6 +16,7 @@ from lab.sf import ROOT
 
 SRC = ROOT / "notebooks" / "src"
 OUT = ROOT / "notebooks"
+TARGETS = [(SRC, OUT), (ROOT / "notebooks" / "colab" / "src", ROOT / "notebooks" / "colab")]
 
 
 def _cells(text: str) -> list[dict]:
@@ -60,8 +61,15 @@ def notebook(text: str) -> str:
 
 def build(check: bool = False) -> list[str]:
     stale = []
-    for src in sorted(SRC.glob("*.py")):
-        target = OUT / f"{src.stem}.ipynb"
+    for src_dir, out_dir in TARGETS:
+        stale += _build_dir(src_dir, out_dir, check)
+    return stale
+
+
+def _build_dir(src_dir, out_dir, check: bool) -> list[str]:
+    stale = []
+    for src in sorted(src_dir.glob("*.py")):
+        target = out_dir / f"{src.stem}.ipynb"
         content = notebook(src.read_text())
         if not target.exists() or target.read_text() != content:
             stale.append(target.name)
