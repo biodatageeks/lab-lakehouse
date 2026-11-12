@@ -82,6 +82,7 @@ def test_4_time_travel():
         "create": "CREATE TABLE AS SELECT", "insert": "WRITE", "bad_update": "UPDATE", "delete": "DELETE",
         "merge": "MERGE", "add_column": "ADD COLUMNS", "optimize": "OPTIMIZE", "repair": "MERGE",
         "restore_old": "RESTORE", "restore_repaired": "RESTORE"}, r["operations"]
+    assert r["recovered_from_history"], "a restarted notebook must find the same step versions"
     versions = list(r["versions"].values())
     assert versions == sorted(versions) and len(set(versions)) == len(versions)
     before, after = r["avg_pay_2024_before_after"]

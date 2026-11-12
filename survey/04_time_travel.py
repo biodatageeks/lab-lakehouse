@@ -28,16 +28,37 @@ import json
 T = "survey.lab.responses_poland"
 COLS = "year, response_id, age_band, dev_type, is_employed, comp_usd_yearly, work_mode, ai_use"
 src = lambda y: f"SELECT {COLS} FROM survey.silver.responses WHERE country = 'Poland' AND year = {y}"
-v = {}  # step name -> table version right after that step
+STEPS = [("create", "CREATE TABLE AS SELECT"), ("insert", "WRITE"), ("bad_update", "UPDATE"), ("delete", "DELETE"),
+         ("merge", "MERGE"), ("add_column", "ADD COLUMNS"), ("optimize", "OPTIMIZE"), ("repair", "MERGE"),
+         ("restore_old", "RESTORE"), ("restore_repaired", "RESTORE")]
 
 
 def step(name, statement):
     spark.sql(statement)
     v[name] = spark.sql(f"DESCRIBE HISTORY {T} LIMIT 1").collect()[0].version
 
+
+def steps_from_history():
+    """Step name -> version, read back from the table history (so a restarted notebook can go on)."""
+    if not spark.catalog.tableExists(T):
+        return {}
+    hist, out, i = spark.sql(f"DESCRIBE HISTORY {T}").orderBy("version").collect(), {}, 0
+    for name, op in STEPS:
+        while i < len(hist) and hist[i].operation != op:
+            i += 1  # skip commits Databricks made on its own (e.g. auto-compaction OPTIMIZE)
+        if i == len(hist):
+            break
+        out[name], i = hist[i].version, i + 1
+    return out
+
+
+v = steps_from_history()  # step name -> table version right after that step
+print(v or "table not created yet")
+
 # COMMAND ----------
 
 spark.sql(f"DROP TABLE IF EXISTS {T}")
+v.clear()
 step("create", f"CREATE TABLE {T} AS {src(2023)}")
 step("insert", f"INSERT INTO {T} {src(2024)}")
 step("bad_update", f"UPDATE {T} SET comp_usd_yearly = comp_usd_yearly * 100 WHERE year = 2024")  # the mistake
@@ -99,7 +120,7 @@ display(before_after)
 
 # COMMAND ----------
 
-ts_v1 = history.filter(f"version = {v['insert']}").collect()[0].timestamp
+ts_v1 = spark.sql(f"DESCRIBE HISTORY {T}").filter(f"version = {v['insert']}").collect()[0].timestamp
 print(f"version {v['insert']} was written at", ts_v1)
 display(spark.sql(f"SELECT year, count(*) FROM {T} TIMESTAMP AS OF '{ts_v1}' GROUP BY year"))
 
@@ -167,6 +188,7 @@ dbutils.notebook.exit(json.dumps({
     "operations": [r.operation for r in final],
     "steps": {name: final[ver].operation for name, ver in v.items()},
     "versions": v,
+    "recovered_from_history": steps_from_history() == v,
     "rows_now": spark.table(T).count(),
     "avg_pay_2024_before_after": [spark.sql(f"SELECT round(avg(comp_usd_yearly)) FROM {T} VERSION AS OF {x} WHERE year = 2024").collect()[0][0]
                                   for x in (v["insert"], v["bad_update"])],
