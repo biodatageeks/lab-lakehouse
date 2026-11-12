@@ -144,6 +144,29 @@ Interactively, arguments are the defaults in each notebook's `args(...)` line: f
 
 Expected in the notebook: `BEFORE (STATEMENT => $qid)` vs `AT (STATEMENT => $qid)` gives 0 vs 237 zeroed orders (revenue 115,817.83 vs 76,793.88), and the Iceberg copy gives the same two states with `AT (VERSION => $v_before)` and `AT (VERSION => $v_after)`. Pitfall: the snapshot id must be a number, not a quoted string.
 
+The before/after query students run, in plain SQL. It also works pasted into a Snowsight SQL worksheet; the query id of the bad `UPDATE` comes from the query history.
+
+```sql
+SET qid = '<query id of the bad UPDATE>';
+
+-- the rows the update changed: the table just before it vs including it
+SELECT b.order_id, b.status, b.amount AS amount_before, a.amount AS amount_after
+FROM SHOP.GOLD.ORDERS_SNAPSHOT BEFORE (STATEMENT => $qid) b
+JOIN SHOP.GOLD.ORDERS_SNAPSHOT AT (STATEMENT => $qid) a ON a.order_id = b.order_id
+WHERE a.amount IS DISTINCT FROM b.amount
+ORDER BY b.order_id;
+
+-- the two versions side by side
+SELECT 'before' AS version, count(*) AS orders, count_if(amount = 0) AS zero_amount,
+       round(sum(amount), 2) AS revenue
+FROM SHOP.GOLD.ORDERS_SNAPSHOT BEFORE (STATEMENT => $qid)
+UNION ALL
+SELECT 'after', count(*), count_if(amount = 0), round(sum(amount), 2)
+FROM SHOP.GOLD.ORDERS_SNAPSHOT AT (STATEMENT => $qid);
+```
+
+Expected: the diff lists 237 `placed` orders whose amount went to 0 (order 2: 36.78 → 0). The summary reads before 700 orders, 0 zeroed, 115,817.83, and after 700 orders, 237 zeroed, 76,793.88. Talking point: `BEFORE` excludes the statement's change and `AT` includes it, so one query id gives both versions.
+
 **Session 6b runs in Google Colab** (free, browser only), because Snowflake notebooks on a trial have no egress to storage. Setup per student, once:
 
 1. Open `notebooks/colab/06b_open_engines.ipynb` in Colab and run its first two cells. They print a private key and a public key.
