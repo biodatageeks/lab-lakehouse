@@ -20,3 +20,10 @@ def test_requirements_cover_notebook_imports():
     req = (ROOT / "notebooks" / "requirements.txt").read_text()
     for pkg in ("duckdb", "polars", "pyiceberg"):
         assert pkg in req
+
+
+def test_course_notebooks_install_packages_first():
+    """Interactive Workspaces notebooks must install requirements.txt before importing anything."""
+    for nb in sorted((ROOT / "notebooks").glob("0*.ipynb")):
+        code = [c for c in json.loads(nb.read_text())["cells"] if c["cell_type"] == "code"]
+        assert "!pip install -q -r requirements.txt" in "".join(code[0]["source"]), nb.name

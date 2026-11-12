@@ -73,10 +73,15 @@ flowchart LR
 
 1. Sign up for a Snowflake 30-day trial (Enterprise edition, any AWS region; no card).
 2. *Projects → Workspaces*: create a SQL file, paste [`prep/bootstrap.sql`](prep/bootstrap.sql), **Run All**.
-3. Bring the notebooks into a workspace (*Workspaces → From Git repository*, or upload the
-   `notebooks/` folder) and pick **Container Runtime**, compute pool `SYSTEM_COMPUTE_POOL_CPU`,
-   warehouse `LAB_WH`. Packages in `notebooks/requirements.txt` come from Snowflake's PyPI mirror.
-4. Run the notebooks in order:
+3. `CALL SHOP.OPS.LOAD_COURSE('biodatageeks/lab-lakehouse@snowflake-notebooks');` (creates the Git
+   integration `LAB_GITHUB` and the notebook project used by `REBUILD`).
+4. Open the notebooks: *Projects → Workspaces →* **From Git repository**, URL
+   `https://github.com/biodatageeks/lab-lakehouse`, API integration `LAB_GITHUB`, **Public repository**,
+   *Create*; then *Changes →* branch `snowflake-notebooks` (*Fetch All* if it is missing). Open a notebook
+   in `notebooks/` and **Connect**: compute pool `SYSTEM_COMPUTE_POOL_CPU`, warehouse `LAB_WH`, package
+   source the **Snowflake PyPI** repository (no external access integration on trials). The first cell
+   of every notebook runs `!pip install -q -r requirements.txt` (duckdb, polars, pyiceberg).
+5. Run the notebooks in order:
 
 | Notebook | Session | Snowflake features |
 | --- | --- | --- |

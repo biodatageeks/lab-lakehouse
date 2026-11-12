@@ -10,6 +10,11 @@
 # Arguments (defaults = first lab run): `--start 1 --count 10 --malformed-at 0 --with-task 0`
 
 # %%
+# Install the course packages (duckdb, polars, pyiceberg) from the Snowflake PyPI repository.
+# Interactive: pick that repository as the package source when you connect; re-run after a restart.
+!pip install -q -r requirements.txt
+
+# %%
 import os, sys, time
 sys.path.insert(0, os.getcwd())
 from lab_nb import *

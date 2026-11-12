@@ -106,10 +106,10 @@ Setup is two SQL calls and one notebook import, all in Snowsight.
 3. Load the course files:
    - public repo: `CALL SHOP.OPS.LOAD_COURSE('https://github.com/<org>/lab-lakehouse.git@<branch>');`
    - or upload: **Data → Databases → SHOP → OPS → Stages → COURSE → + Files**, keeping the `notebooks/` and `dbt_shop/` folders, then `CALL SHOP.OPS.LOAD_COURSE('');`
-4. Open the notebooks in a workspace (**Workspaces → From Git repository**, or upload the `notebooks/` folder) with these settings:
+4. Open the notebooks: **Projects → Workspaces → From Git repository**, URL `https://github.com/biodatageeks/lab-lakehouse`, API integration `LAB_GITHUB` (created by `LOAD_COURSE`), **Public repository**, Create; then **Changes →** branch `snowflake-notebooks` (**Fetch All** if it is missing). Open a notebook in `notebooks/` and **Connect** with these settings:
    - runtime: **Container Runtime** (CPU), compute pool `SYSTEM_COMPUTE_POOL_CPU`
    - query warehouse: `LAB_WH`
-   - packages: `notebooks/requirements.txt` (duckdb, polars, pyiceberg) from the Snowflake PyPI repository
+   - package source: the **Snowflake PyPI** repository (no external access integration on trials). The first cell of every notebook runs `!pip install -q -r requirements.txt` (duckdb ≥ 2.0, polars ≥ 2.1, pyiceberg ≥ 0.12); run it first and again after a kernel restart. Without a package source the first import fails with `No module named 'duckdb'`
 5. Run `00_check_setup`. It should report role `ACCOUNTADMIN`, warehouse `LAB_WH`, `retention_90_days = allowed`, the package versions, and every internet URL as an error (expected on a trial).
 
 Keep the helper files `lab_nb.py`, `producer.py` and `grade.py` in the same folder as the notebooks: every notebook imports them.

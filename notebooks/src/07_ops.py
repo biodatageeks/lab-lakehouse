@@ -7,6 +7,11 @@
 # * the weekly grading checks
 
 # %%
+# Install the course packages (duckdb, polars, pyiceberg) from the Snowflake PyPI repository.
+# Interactive: pick that repository as the package source when you connect; re-run after a restart.
+!pip install -q -r requirements.txt
+
+# %%
 import os, sys, time
 sys.path.insert(0, os.getcwd())
 from lab_nb import *
