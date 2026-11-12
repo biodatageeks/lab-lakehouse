@@ -33,23 +33,47 @@ CREATE TABLE IF NOT EXISTS SHOP.OPS.NB_RESULTS (
 --   source = ''                         -> files were uploaded to @SHOP.OPS.COURSE (Snowsight:
 --                                          Data > Databases > SHOP > OPS > Stages > COURSE > + Files,
 --                                          keeping the notebooks/ and dbt_shop/ folders)
---   source = 'https://github.com/<org>/<repo>.git@<branch>'
---                                       -> copied from a PUBLIC Git repository
+--   source = a PUBLIC GitHub repository, optionally '@<branch>' (default: main, else master), e.g.
+--            'biodatageeks/lab-lakehouse@snowflake-notebooks'
+--            'https://github.com/biodatageeks/lab-lakehouse.git@snowflake-notebooks'
+--            'git@github.com:biodatageeks/lab-lakehouse.git@snowflake-notebooks'
 CREATE OR REPLACE PROCEDURE SHOP.OPS.LOAD_COURSE(SOURCE STRING)
 RETURNS VARIANT
 LANGUAGE PYTHON RUNTIME_VERSION = '3.12' PACKAGES = ('snowflake-snowpark-python')
 HANDLER = 'run' EXECUTE AS CALLER
 AS $$
+import re
+
+GITHUB = re.compile(r"^(?:https?://)?(?:git@)?(?:www\.)?(?:github\.com[/:])?"
+                    r"(?P<org>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?/?(?:@(?P<branch>[^@\s]+))?$")
+
+
+def parse(source):
+    """Any common spelling of a GitHub repo -> (https clone URL, allowed prefix, branch or None)."""
+    m = GITHUB.match(source.strip())
+    if not m:
+        raise ValueError(f"cannot read {source!r} as a GitHub repository; use '<org>/<repo>@<branch>' "
+                         "or 'https://github.com/<org>/<repo>.git@<branch>'")
+    org, repo = m["org"], m["repo"]
+    return f"https://github.com/{org}/{repo}.git", f"https://github.com/{org}", m["branch"]
+
+
 def run(session, source):
     q = lambda s: session.sql(s).collect()
     if source:
-        url, _, branch = source.partition("@")
-        prefix = url.rsplit("/", 1)[0]
+        url, prefix, branch = parse(source)
         q(f"CREATE API INTEGRATION IF NOT EXISTS LAB_GITHUB API_PROVIDER = GIT_HTTPS_API "
           f"API_ALLOWED_PREFIXES = ('{prefix}') ENABLED = TRUE")
         q(f"ALTER API INTEGRATION LAB_GITHUB SET API_ALLOWED_PREFIXES = ('{prefix}')")
-        q(f"CREATE OR REPLACE GIT REPOSITORY SHOP.OPS.COURSE_REPO API_INTEGRATION = LAB_GITHUB ORIGIN = '{url}'")
-        branch = branch or "main"
+        try:
+            q(f"CREATE OR REPLACE GIT REPOSITORY SHOP.OPS.COURSE_REPO API_INTEGRATION = LAB_GITHUB ORIGIN = '{url}'")
+        except Exception as e:
+            raise ValueError(f"cannot clone {url}: is the repository public? ({' '.join(str(e).split())[:200]})")
+        branches = [r["name"] for r in session.sql("SHOW GIT BRANCHES IN SHOP.OPS.COURSE_REPO").collect()]
+        if branch is None:
+            branch = next((b for b in ("main", "master") if b in branches), branches[0] if branches else "main")
+        if branch not in branches:
+            raise ValueError(f"branch {branch!r} not found in {url}; branches: {', '.join(branches[:20])}")
         q("REMOVE @SHOP.OPS.COURSE")
         # a notebook project cannot be created from a Git repository stage directly: copy first
         for d in ("notebooks", "dbt_shop"):

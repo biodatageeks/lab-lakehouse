@@ -5,7 +5,7 @@
 -- 2. Projects > Workspaces > + SQL file. Paste prep/bootstrap.sql and Run All.
 --    That creates the warehouse, database SHOP, the stages and two procedures.
 -- 3. Get the course files into the account, ONE of:
---      a) public repo:  CALL SHOP.OPS.LOAD_COURSE('https://github.com/<org>/lab-lakehouse.git@<branch>');
+--      a) public repo:  CALL SHOP.OPS.LOAD_COURSE('<org>/lab-lakehouse@<branch>');  (or the full https URL)
 --      b) upload:       Data > Databases > SHOP > OPS > Stages > COURSE > + Files: upload the repo's
 --                       notebooks/ and dbt_shop/ folders (keep the folder names), then
 --                       CALL SHOP.OPS.LOAD_COURSE('');
@@ -16,9 +16,9 @@
 USE ROLE ACCOUNTADMIN;
 USE WAREHOUSE LAB_WH;
 
--- step 3 (pick one)
-CALL SHOP.OPS.LOAD_COURSE('');
--- CALL SHOP.OPS.LOAD_COURSE('https://github.com/biodatageeks/lab-lakehouse.git@snowflake-notebooks');
+-- step 3 (pick one): the public course repo, or files you uploaded to stage SHOP.OPS.COURSE
+CALL SHOP.OPS.LOAD_COURSE('biodatageeks/lab-lakehouse@snowflake-notebooks');
+-- CALL SHOP.OPS.LOAD_COURSE('');
 
 -- step 4: last finished session (1..7)
 CALL SHOP.OPS.REBUILD(5);
