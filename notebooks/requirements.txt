@@ -1,0 +1,3 @@
+duckdb>=2.0
+polars>=2.1
+pyiceberg[pyarrow]>=0.12

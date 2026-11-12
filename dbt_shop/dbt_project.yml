@@ -1,0 +1,13 @@
+name: dbt_shop
+version: "1.0"
+config-version: 2
+profile: dbt_shop
+
+models:
+  dbt_shop:
+    staging:
+      +schema: SILVER
+      +materialized: view
+    marts:
+      +schema: GOLD
+      +materialized: table
