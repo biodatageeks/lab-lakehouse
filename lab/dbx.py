@@ -55,6 +55,20 @@ class NotebookFailed(RuntimeError):
     pass
 
 
+def export_html(name: str, task_run_id: int) -> None:
+    """With ``LAB_EXPORT_HTML=<dir>`` save the finished run (code + outputs + charts) as ``<dir>/<name>.html``."""
+    target = os.environ.get("LAB_EXPORT_HTML")
+    if not target:
+        return
+    from databricks.sdk.service import jobs
+
+    views = ws().jobs.export_run(task_run_id, views_to_export=jobs.ViewsToExport.CODE).views or []
+    if views:
+        path = ROOT / target / f"{name}.html"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(views[0].content)
+
+
 def run_notebook(name: str, params: dict | None = None, timeout_min: int = 40, folder: str = "survey") -> dict:
     """Run ``<folder>/<name>`` once on serverless and return its exit JSON."""
     from databricks.sdk.service import jobs
@@ -72,6 +86,7 @@ def run_notebook(name: str, params: dict | None = None, timeout_min: int = 40, f
     except Exception:  # noqa: BLE001 - failed runs raise; fetch the run to show its output
         run = w.jobs.get_run(waiter.run_id)
     task = run.tasks[0]
+    export_html(name, task.run_id)
     out = w.jobs.get_run_output(task.run_id)
     state = task.state.result_state.value if task.state and task.state.result_state else "UNKNOWN"
     if state != "SUCCESS":

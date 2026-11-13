@@ -73,6 +73,17 @@ def test_3_analysis():
     assert r["top_country"] == "United States"
     assert set(r["python_share"]) == {"2023", "2024", "2025"}
     assert r["pay_countries"] > 5 and r["ds_languages"] > 5
+    # parts A-C: the DataFrame API, SQL, pandas and the gold tables agree with each other
+    for year, share in r["python_share"].items():
+        assert r["python_share_df"][year] == pytest.approx(share, abs=1e-4), "DataFrame API vs gold.language_trend"
+    assert r["sql_equals_df"] is True
+    assert r["lazy"]["pandas_matches_spark"] is True
+    assert r["lazy"]["error_at"] in ("the action", "building the plan")
+    assert r["exports"]["table_rows"] == r["exports"]["csv_rows"] > 5, "saveAsTable and the CSV export hold the same rows"
+    assert r["countries"] > 150
+    c = r["charts"]
+    assert c["big_countries"] >= 10 and c["box_countries"] == c["big_countries"]
+    assert c["experience_points"] > 20 and c["education_rows"] > 1000
 
 
 def test_4_time_travel():

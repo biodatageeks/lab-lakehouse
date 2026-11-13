@@ -11,7 +11,9 @@ What students do:
 * load them with **Auto Loader** into a bronze table **partitioned by year**, with schema evolution
 * clean them into **silver** and aggregate into **gold** with a **Spark Declarative Pipeline** (SDP)
 * make the pipeline run **by itself when a new file arrives** (job with a file arrival trigger)
-* analyse with Spark SQL → pandas → matplotlib
+* query with the **Spark DataFrame API** and **Spark SQL** (same plan for both), see **lazy evaluation** at
+  work and compare it with eager **pandas**
+* chart with pandas, matplotlib and seaborn (histogram, pie, line, bar, box, violin, heatmap)
 * explore **Delta versions, history and time travel** (`DESCRIBE HISTORY`, `VERSION AS OF`, `RESTORE`)
 
 ## Architecture
@@ -40,7 +42,7 @@ flowchart LR
 | `00_setup` | catalog `survey`, schemas, volume; look at the files before loading (size, columns, LFS, BOM) | 1 min |
 | `01_pipeline` | downloads 2023 + 2024; creates the pipeline and the job; first load (*Run now*) | 3-4 min |
 | `02_new_data_arrives` | downloads 2025 — the **trigger** starts the pipeline on its own; schema evolution; history | 4-5 min |
-| `03_analysis` | Spark SQL → pandas → charts (languages, pay, AI, remote work, heatmap) | 2 min |
+| `03_analysis` | DataFrame API (select, filter, groupBy, withColumn, explode, write) · Spark SQL (temp views, `%sql`, CTE, window functions) · lazy evaluation vs pandas · charts in matplotlib and seaborn | 3 min + tasks |
 | `04_time_travel` | ten versions of a Delta table: wrong update, before/after, repair, `RESTORE`; time travel on bronze | 1 min |
 | `99_reset` | deletes job, pipeline and the catalog — start over | 1 min |
 
@@ -67,6 +69,7 @@ uv sync
 cp .env.example .env          # DATABRICKS_CONFIG_PROFILE = a Free Edition profile in ~/.databrickscfg
 uv run pytest                 # reset + all notebooks in class order, ~15 min
 LAB_NO_RESET=1 uv run pytest  # keep the current state
+LAB_EXPORT_HTML=reports/html uv run pytest   # also save every run (code, outputs, charts) as HTML
 ```
 
 Data: *Stack Overflow Developer Survey*, Stack Exchange Inc., licensed under the

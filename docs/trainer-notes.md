@@ -1,6 +1,6 @@
 # Trainer notes · Stack Overflow survey lab (Databricks Free Edition)
 
-Verified end-to-end on a Free Edition workspace on 2026-11-12 (`uv run pytest`, clean state).
+Verified end-to-end on a Free Edition workspace on 2026-11-13 (`uv run pytest`, clean state).
 
 ## Topics covered
 
@@ -12,8 +12,16 @@ Verified end-to-end on a Free Edition workspace on 2026-11-12 (`uv run pytest`, 
 6. **Expectations** (data quality): drop vs. warn, results in the UI and the event log
 7. Data cleaning across years: `NA`, multi-select answers, answers whose wording changed
 8. Orchestration: a **job with a file arrival trigger** — the pipeline runs when data arrives
-9. Spark SQL → pandas → matplotlib, and why `toPandas()` only on small results
-10. **Delta Lake**: commits, versions, `DESCRIBE HISTORY`, `VERSION AS OF`, `TIMESTAMP AS OF`, repair, `RESTORE`
+9. **Spark DataFrame API**: `createDataFrame` with and without a schema, `printSchema`, `describe`/`summary`,
+   `select`, `distinct`, `filter`/`where` (string vs `Column`), `groupBy`/`agg`, `withColumn` (`lit`, `concat_ws`,
+   `when`), immutability (`drop`), `split`/`explode`/`posexplode`, array functions, `saveAsTable`, CSV to a volume
+10. **Spark SQL**: temporary views, a `%sql` cell, one question in both APIs → the same plan (Catalyst),
+    CTE, `HAVING`, window functions, subqueries
+11. **Lazy evaluation**: transformations vs actions, column and partition pruning in `explain`, late errors on
+    Spark Connect, the same question in eager pandas (`read_csv` parses the whole file)
+12. Charts: matplotlib, pandas `.plot`, seaborn (histogram, pie, line, bar, box, violin/boxen, strip, heatmap),
+    and why `toPandas()` only on small results
+13. **Delta Lake**: commits, versions, `DESCRIBE HISTORY`, `VERSION AS OF`, `TIMESTAMP AS OF`, repair, `RESTORE`
 
 ## The data
 
@@ -60,11 +68,22 @@ Bronze ends with 249 columns (all years' columns + `year`, `_source_file`, `_ing
   years must evolve its schema; old years get NULL in new columns.
 * **Task 2** (notebook 2): the last update wrote 49 191 rows to bronze — only the 2025 file; the
   checkpoint remembers which files were loaded.
-* **Task 3** (notebook 3): `gold.databases_pro` per year; `ed_level` of 2025; pay by `work_mode`.
+* **Task 3A** (notebook 3, DataFrame API): a) `df.filter("year = 2025").select("dev_type").distinct().count()`
+  (NULL counts as one value — `dropna()` or `isNotNull()` to leave it out), same for `country`;
+  b) `filter(F.col("country").isin("Poland", "Czech Republic", "Slovakia") & (F.col("years_code") > 30))`;
+  c) `df.groupBy("dev_type").pivot("year").count().orderBy(F.desc("2025"))` → `.write.mode("overwrite").saveAsTable("survey.lab.dev_types")`.
+* **Task 3B** (SQL): `GROUP BY country HAVING count(*) >= 500`, `avg` + `median`; compare both APIs with
+  `collect() ==` or `exceptAll`. `top3` in the DataFrame API: `withColumn("place", F.rank().over(w)).filter("place <= 3")`.
+* **Task 3C** (lazy): only `show`, `toPandas`, `saveAsTable` (and `count`, `collect`) run Spark jobs;
+  `printSchema` asks for the schema (a quick round trip on Spark Connect, no job), `explain` only prints the plan.
+  The second `collect()` is usually faster (warm caches), but it runs the plan again. Filtering on `Country`
+  leaves `PartitionFilters` empty: bronze is partitioned by `year` only, so every partition must be read.
+* **Task 3D** (charts): `gold.databases_pro` per year; `ed_level` of 2025; pay by `work_mode`; `org_size`
+  categories differ between years — filter on 2025 and pass `order=` to seaborn.
 * **Task 4** (notebook 4): `numDeletedRows` is on the `DELETE` version (usually 3); the query is
   `SELECT … FROM t VERSION AS OF 2 EXCEPT SELECT … FROM t VERSION AS OF 3` — the students.
 
-## Timings measured on Free Edition (2026-11-12)
+## Timings measured on Free Edition (2026-11-12, notebook 3 on 2026-11-13)
 
 | step | time |
 |---|---|
@@ -72,7 +91,8 @@ Bronze ends with 249 columns (all years' columns + `year`, `_source_file`, `_ing
 | first load, 2023 + 2024 (job run incl. pipeline start-up) | 82-102 s |
 | 2025 file lands → job starts (file arrival trigger) | 82-86 s |
 | pipeline run for 2025 (new columns, silver + gold recomputed) | 162-173 s |
-| whole test-suite (reset + notebooks 0-4) | ~11 min |
+| notebook 3, Run all (parts A-D, without the tasks) | ~2 min |
+| whole test-suite (reset + notebooks 0-4) | ~13 min |
 
 ## Starting over / a new account
 
