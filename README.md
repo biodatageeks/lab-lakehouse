@@ -33,7 +33,7 @@ flowchart LR
 ## Student steps
 
 1. Sign up for [Databricks Free Edition](https://www.databricks.com/learn/free-edition).
-2. **Workspace → Create → Git folder**, URL `https://github.com/biodatageeks/lab-lakehouse`, branch
+2. **New → More → Git folder**, URL `https://github.com/biodatageeks/lab-lakehouse`, branch
    `databricks-survey`. (Public repository: no token needed.)
 3. Open the folder `survey/` and run the notebooks in order, each with **Run all**:
 
